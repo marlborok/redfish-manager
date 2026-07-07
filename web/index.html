@@ -121,6 +121,7 @@
 const I18N = {
   zh: {
     updated_at: "更新於 {0}",
+    paused_hint: "⏸ 互動中,已暫停自動更新",
     ph_name: "名稱", ph_host: "BMC IP", ph_user: "帳號", ph_pass: "密碼",
     add_device: "新增設備", connecting: "連線探測中…", added: "已加入 ✓",
     failed: "失敗:{0}",
@@ -196,6 +197,7 @@ const I18N = {
   },
   en: {
     updated_at: "Updated at {0}",
+    paused_hint: "⏸ Interacting — auto-refresh paused",
     ph_name: "Name", ph_host: "BMC IP", ph_user: "Username", ph_pass: "Password",
     add_device: "Add Device", connecting: "Connecting & discovering…", added: "Added ✓",
     failed: "Failed: {0}",
@@ -291,7 +293,7 @@ function setLang(l) {
   lang = l;
   localStorage.setItem("rf_lang", l);
   applyStatic();
-  refresh();
+  refresh(true);
 }
 
 // ==================== helpers ====================
@@ -308,7 +310,7 @@ function sectionTable(title, headers, rows) {
 
 function renderSystem(sys, profileSys, devId) {
   const btns = (profileSys?.reset_types ?? []).map(type =>
-    `<button class="${DANGEROUS.has(type)?'danger':''}" onclick="doReset(${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`
+    `<button class="${DANGEROUS.has(type)?'danger':''}" onclick="doReset(event,${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`
   ).join("");
   return `
     <div class="row" style="align-items:center">
@@ -370,10 +372,16 @@ function renderDevice(dev) {
   </div>`;
 }
 
-async function doReset(devId, systemId, type) {
+async function doReset(ev, devId, systemId, type) {
   if (!confirm(t("confirm_reset", systemId, resetLabel(type)))) return;
-  const msg = document.querySelector(`.power-btns[data-dev="${devId}"] .msg`);
+  const group = document.querySelector(`.power-btns[data-dev="${devId}"]`);
+  const msg = group.querySelector(".msg");
+  const btns = group.querySelectorAll("button");
   msg.textContent = t("running"); msg.className = "msg";
+  // disable every power button in this group while the request is in flight,
+  // and pause auto-refresh so the feedback isn't wiped mid-operation
+  btns.forEach(b => b.disabled = true);
+  pendingOps++;
   try {
     const r = await fetch(`/api/devices/${devId}/reset`, {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -382,6 +390,7 @@ async function doReset(devId, systemId, type) {
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
     msg.textContent = t("sent", type);
   } catch(e) { msg.textContent = t("failed", e.message); msg.className = "msg err"; }
+  finally { btns.forEach(b => b.disabled = false); pendingOps--; }
 }
 
 async function addDevice(ev) {
@@ -399,7 +408,7 @@ async function addDevice(ev) {
       })
     });
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
-    msg.textContent = t("added"); ev.target.reset(); refresh();
+    msg.textContent = t("added"); ev.target.reset(); refresh(true);
   } catch(e) { msg.textContent = t("failed", e.message); msg.className = "msg err"; }
 }
 
@@ -473,7 +482,7 @@ async function biosRestore() {
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
     const d = await r.json();
     msg.textContent = d.restored ? t("restore_ok", d.message, d.restored) : d.message;
-    refresh();
+    refresh(true);
   } catch(e) { msg.textContent = t("restore_failed", e.message); msg.className = "msg err"; }
 }
 
@@ -490,8 +499,8 @@ async function biosBackupOnly() {
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
     const d = await r.json();
     msg.textContent = t("backup_ok", d.attribute_count, d.backup_file);
-    loadBackups(); refresh();
-  } catch(e) { msg.textContent = t("backup_failed", e.message); msg.className = "msg err"; refresh(); }
+    loadBackups(); refresh(true);
+  } catch(e) { msg.textContent = t("backup_failed", e.message); msg.className = "msg err"; refresh(true); }
 }
 
 async function startBiosUpdate() {
@@ -520,7 +529,7 @@ async function startBiosUpdate() {
     const d = await r.json();
     msg.textContent = t("upload_done", d.size_mb, d.backup_file ? t("settings_backed_up") : "", d.task_id);
     document.getElementById("bd-bar-outer").style.display = "";
-    loadBackups(); refresh();
+    loadBackups(); refresh(true);
     pollBiosTask(d.task_id);
   } catch(e) {
     msg.textContent = t("update_failed", e.message); msg.className = "msg err";
@@ -541,12 +550,12 @@ function pollBiosTask(taskId) {
         bar.style.width = "100%";
         msg.textContent = t("flash_complete");
         document.getElementById("bd-start").disabled = false;
-        refresh();
+        refresh(true);
       } else if (d.state === "Exception" || d.status === "Critical") {
         clearInterval(biosPolling); biosPolling = null;
         msg.textContent = t("flash_failed", d.state); msg.className = "msg err";
         document.getElementById("bd-start").disabled = false;
-        refresh();
+        refresh(true);
       } else if (d.state) {
         msg.textContent = t("flashing", d.state + (pct ? " " + pct + "%" : ""));
       } else {
@@ -637,31 +646,54 @@ async function clearLog() {
     });
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
     msg.textContent = t("cleared");
-    refresh(); loadLogEntries();
+    refresh(true); loadLogEntries();
   } catch(e) { msg.textContent = t("clear_failed", e.message); msg.className = "msg err"; }
 }
 
 // ---------------- main refresh ----------------
-async function refresh() {
+// Auto-refresh replaces #app wholesale, which would collapse open <details>,
+// reset scroll inside tables, and wipe in-flight operation feedback. So a
+// background tick still fetches fresh data (for open dialogs) but skips the
+// DOM re-render while the user is interacting. Manual refreshes force render.
+let pendingOps = 0;      // in-flight power/BIOS operations
+let appHovered = false;  // pointer currently over the content area
+
+function renderPaused() {
+  return pendingOps > 0 || appHovered || !!document.querySelector("#app details[open]");
+}
+
+async function refresh(force = false) {
+  let devices, activities;
   try {
-    const [devices, activities] = await Promise.all([
+    [devices, activities] = await Promise.all([
       (await fetch("/api/devices")).json(),
       (await fetch("/api/activities")).json(),
     ]);
-    window._devices = devices;
-    document.getElementById("app").innerHTML =
-      devices.length ? devices.map(renderDevice).join("") : `<div class="card muted">${t("no_devices")}</div>`;
-    renderActivities(activities);
-    document.getElementById("lastUpdate").textContent = t("updated_at", new Date().toLocaleTimeString());
   } catch(e) {
-    document.getElementById("app").innerHTML = `<div class="card err">${t("backend_unreachable", e.message)}</div>`;
+    if (force || !window._devices) {
+      document.getElementById("app").innerHTML = `<div class="card err">${t("backend_unreachable", e.message)}</div>`;
+    }
+    return;
   }
+  window._devices = devices;  // keep data fresh for open dialogs even when paused
+  if (!force && renderPaused()) {
+    document.getElementById("lastUpdate").textContent = t("paused_hint");
+    return;
+  }
+  document.getElementById("app").innerHTML =
+    devices.length ? devices.map(renderDevice).join("") : `<div class="card muted">${t("no_devices")}</div>`;
+  renderActivities(activities);
+  document.getElementById("lastUpdate").textContent =
+    t("updated_at", new Date().toLocaleTimeString(lang === "en" ? "en-US" : "zh-TW"));
 }
 
 applyStatic();
-document.getElementById("app").innerHTML = `<div class="card muted">${t("loading")}</div>`;
-refresh();
-setInterval(refresh, 15000);
+const appEl = document.getElementById("app");
+appEl.innerHTML = `<div class="card muted">${t("loading")}</div>`;
+appEl.addEventListener("mouseenter", () => appHovered = true);
+appEl.addEventListener("mouseleave", () => appHovered = false);
+refresh(true);
+setInterval(() => refresh(), 15000);
 </script>
 </body>
 </html>
