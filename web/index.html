@@ -4,59 +4,94 @@
 <meta charset="utf-8">
 <title>Redfish Manager</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  // apply saved/preferred theme before first paint to avoid a flash
+  (function(){
+    var t = localStorage.getItem("rf_theme")
+      || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
 <style>
-  :root { --ok:#2e9e5b; --warn:#d98c00; --crit:#d0342c; --bg:#f4f6f8; --card:#fff; }
+  :root {
+    --ok:#2e9e5b; --warn:#d98c00; --crit:#d0342c; --badge-off:#888;
+    --bg:#f4f6f8; --card:#fff; --text:#222; --text-muted:#6b7280;
+    --border:#e6e8eb; --border-strong:#ccc;
+    --header-bg:#1b2a41; --header-text:#fff;
+    --th-bg:#fafafa; --th-text:#666;
+    --hover:#eef2f7; --input-bg:#fff;
+    --btn-primary-bg:#1b2a41; --btn-primary-text:#fff; --btn-primary-hover:#26374f;
+    --danger-hover:#fdecec; --pre-bg:#f7f8fa;
+    --shadow:0 1px 3px rgba(0,0,0,.08); --shadow-dialog:0 8px 30px rgba(0,0,0,.25);
+    --backdrop:rgba(0,0,0,.35);
+  }
+  :root[data-theme="dark"] {
+    --ok:#3fb56f; --warn:#e0a020; --crit:#e5544b; --badge-off:#6b7785;
+    --bg:#0e1620; --card:#1a2430; --text:#e6eaf0; --text-muted:#9aa5b1;
+    --border:#2b3744; --border-strong:#3a4756;
+    --header-bg:#0b1119; --header-text:#e6eaf0;
+    --th-bg:#212d3a; --th-text:#aab4bf;
+    --hover:#2a3a4f; --input-bg:#0f1822;
+    --btn-primary-bg:#2d6cdf; --btn-primary-text:#fff; --btn-primary-hover:#3b7bee;
+    --danger-hover:#3a1f1f; --pre-bg:#0f1822;
+    --shadow:0 1px 3px rgba(0,0,0,.5); --shadow-dialog:0 8px 30px rgba(0,0,0,.6);
+    --backdrop:rgba(0,0,0,.6);
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:#222; }
-  header { background:#1b2a41; color:#fff; padding:14px 24px; display:flex; align-items:center; gap:12px; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text);
+    transition:background .2s, color .2s; }
+  header { background:var(--header-bg); color:var(--header-text); padding:14px 24px; display:flex; align-items:center; gap:12px; }
   header h1 { font-size:18px; margin:0; }
-  header .right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+  header .right { margin-left:auto; display:flex; align-items:center; gap:12px; }
   header .ts { font-size:12px; opacity:.7; }
-  .lang-toggle { display:flex; border:1px solid rgba(255,255,255,.35); border-radius:6px; overflow:hidden; }
-  .lang-toggle button { background:transparent; color:#fff; border:none; padding:4px 10px; cursor:pointer; font-size:12px; }
-  .lang-toggle button.active { background:#fff; color:#1b2a41; font-weight:600; }
+  .seg-toggle { display:flex; border:1px solid rgba(255,255,255,.35); border-radius:6px; overflow:hidden; }
+  .seg-toggle button { background:transparent; color:var(--header-text); border:none; padding:4px 10px; cursor:pointer; font-size:12px; }
+  .seg-toggle button.active { background:var(--header-text); color:var(--header-bg); font-weight:600; }
   main { padding:20px 24px; max-width:1100px; margin:0 auto; }
-  .card { background:var(--card); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:18px 20px; margin-bottom:18px; }
+  .card { background:var(--card); border-radius:10px; box-shadow:var(--shadow); padding:18px 20px; margin-bottom:18px; }
   .row { display:flex; flex-wrap:wrap; gap:24px; }
   .kv { min-width:150px; }
-  .kv .k { font-size:12px; color:#777; }
+  .kv .k { font-size:12px; color:var(--text-muted); }
   .kv .v { font-size:15px; font-weight:600; }
   .badge { display:inline-block; padding:2px 10px; border-radius:12px; color:#fff; font-size:12px; font-weight:600; }
   .badge.ok { background:var(--ok); } .badge.warn { background:var(--warn); }
-  .badge.crit { background:var(--crit); } .badge.off { background:#888; }
+  .badge.crit { background:var(--crit); } .badge.off { background:var(--badge-off); }
   table { border-collapse:collapse; width:100%; font-size:13px; }
-  th, td { text-align:left; padding:5px 10px; border-bottom:1px solid #eee; }
-  th { color:#666; font-weight:600; background:#fafafa; position:sticky; top:0; z-index:1; }
+  th, td { text-align:left; padding:5px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--th-text); font-weight:600; background:var(--th-bg); position:sticky; top:0; z-index:1; }
   .temp-hot { color:var(--crit); font-weight:700; }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
   /* unified button system */
   .btn { padding:6px 14px; border-radius:6px; font-size:13px; cursor:pointer; line-height:1.4;
-    border:1px solid transparent; background:#fff; color:#333; }
+    border:1px solid transparent; background:var(--card); color:var(--text); }
   .btn:disabled { opacity:.35; cursor:not-allowed; }
-  .btn-primary { background:#1b2a41; color:#fff; border-color:#1b2a41; }
-  .btn-primary:hover:not(:disabled) { background:#26374f; }
-  .btn-ghost { border-color:#ccc; color:#333; }
-  .btn-ghost:hover:not(:disabled) { background:#eef2f7; }
+  .btn-primary { background:var(--btn-primary-bg); color:var(--btn-primary-text); border-color:var(--btn-primary-bg); }
+  .btn-primary:hover:not(:disabled) { background:var(--btn-primary-hover); border-color:var(--btn-primary-hover); }
+  .btn-ghost { border-color:var(--border-strong); color:var(--text); }
+  .btn-ghost:hover:not(:disabled) { background:var(--hover); }
   .btn-danger { border-color:var(--crit); color:var(--crit); }
-  .btn-danger:hover:not(:disabled) { background:#fdecec; }
+  .btn-danger:hover:not(:disabled) { background:var(--danger-hover); }
   /* action groups (power control vs management) */
   .actions { margin-top:14px; }
   .action-group { margin-bottom:12px; }
   .action-group:last-child { margin-bottom:0; }
-  .action-label { font-size:12px; color:#6b7280; margin-bottom:5px; }
+  .action-label { font-size:12px; color:var(--text-muted); margin-bottom:5px; }
   .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
   .msg { font-size:13px; margin-top:8px; }
   .err { color:var(--crit); }
-  .muted { color:#6b7280; font-size:13px; }
-  form.add input { padding:6px 10px; border:1px solid #ccc; border-radius:6px; margin-right:8px; font-size:13px; }
-  details.profile summary { cursor:pointer; font-size:13px; color:#666; }
-  details.profile pre { font-size:11px; background:#f7f8fa; padding:10px; border-radius:6px; overflow:auto; max-height:280px; }
-  dialog { border:none; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.25); padding:22px 26px; width:420px; max-width:92vw; }
-  dialog::backdrop { background:rgba(0,0,0,.35); }
+  .muted { color:var(--text-muted); font-size:13px; }
+  input, select { background:var(--input-bg); color:var(--text); border:1px solid var(--border-strong);
+    border-radius:6px; font-size:13px; }
+  form.add input { padding:6px 10px; margin-right:8px; }
+  details.profile summary { cursor:pointer; font-size:13px; color:var(--th-text); }
+  details.profile pre { font-size:11px; background:var(--pre-bg); padding:10px; border-radius:6px; overflow:auto; max-height:280px; }
+  dialog { border:none; border-radius:12px; box-shadow:var(--shadow-dialog); padding:22px 26px; width:420px; max-width:92vw;
+    background:var(--card); color:var(--text); }
+  dialog::backdrop { background:var(--backdrop); }
   dialog h3 { margin:0 0 12px; font-size:16px; }
   dialog .field { margin:10px 0; font-size:13px; }
-  .progress-outer { background:#eee; border-radius:8px; height:14px; overflow:hidden; margin-top:10px; }
+  .progress-outer { background:var(--border); border-radius:8px; height:14px; overflow:hidden; margin-top:10px; }
   .progress-inner { background:var(--ok); height:100%; width:0%; transition:width .5s; }
 </style>
 </head>
@@ -65,7 +100,11 @@
   <h1>🖥️ Redfish Manager</h1>
   <div class="right">
     <span class="ts" id="lastUpdate"></span>
-    <div class="lang-toggle">
+    <div class="seg-toggle" id="themeToggle">
+      <button data-theme-opt="light" onclick="setTheme('light')">☀</button>
+      <button data-theme-opt="dark" onclick="setTheme('dark')">🌙</button>
+    </div>
+    <div class="seg-toggle" id="langToggle">
       <button data-lang="zh" onclick="setLang('zh')">中文</button>
       <button data-lang="en" onclick="setLang('en')">EN</button>
     </div>
@@ -102,9 +141,9 @@
   </div>
   <div class="progress-outer" id="bd-bar-outer" style="display:none"><div class="progress-inner" id="bd-bar"></div></div>
   <div class="msg" id="bd-msg"></div>
-  <hr style="margin:16px 0;border:none;border-top:1px solid #eee">
+  <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
   <h3 data-i18n="bios_restore_title"></h3>
-  <div class="field"><select id="bd-backup" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px"></select></div>
+  <div class="field"><select id="bd-backup" style="width:100%;padding:6px"></select></div>
   <div class="field btn-row">
     <button class="btn btn-ghost" onclick="biosRestorePreview()" data-i18n="preview_diff"></button>
     <button class="btn btn-primary" onclick="biosRestore()" data-i18n="restore_settings"></button>
@@ -116,7 +155,7 @@
 <dialog id="logDialog" style="width:760px">
   <h3><span data-i18n="event_log"></span> <span class="muted" id="ld-host" style="font-weight:400;font-size:13px"></span></h3>
   <div class="field" style="display:flex;gap:8px;align-items:center">
-    <select id="ld-service" style="flex:1;padding:6px;border:1px solid #ccc;border-radius:6px" onchange="loadLogEntries()"></select>
+    <select id="ld-service" style="flex:1;padding:6px" onchange="loadLogEntries()"></select>
     <button class="btn btn-ghost" onclick="loadLogEntries()" data-i18n="refresh"></button>
     <button class="btn btn-danger" onclick="clearLog()" data-i18n="clear_log"></button>
     <button class="btn btn-ghost" onclick="closeLogDialog()" data-i18n="close"></button>
@@ -131,6 +170,7 @@ const I18N = {
   zh: {
     updated_at: "更新於 {0}",
     paused_hint: "⏸ 互動中,已暫停自動更新",
+    theme_light: "淺色模式", theme_dark: "深色模式",
     na_already_on: "系統已開機,無需再開機", na_already_off: "系統已關機,此操作需在開機狀態下執行",
     ph_name: "名稱", ph_host: "BMC IP", ph_user: "帳號", ph_pass: "密碼",
     add_device: "新增設備", connecting: "連線探測中…", added: "已加入 ✓",
@@ -209,6 +249,7 @@ const I18N = {
   en: {
     updated_at: "Updated at {0}",
     paused_hint: "⏸ Interacting — auto-refresh paused",
+    theme_light: "Light mode", theme_dark: "Dark mode",
     na_already_on: "System is already powered On", na_already_off: "System is powered Off; this action requires it to be On",
     ph_name: "Name", ph_host: "BMC IP", ph_user: "Username", ph_pass: "Password",
     add_device: "Add Device", connecting: "Connecting & discovering…", added: "Added ✓",
@@ -283,12 +324,29 @@ const I18N = {
 };
 
 let lang = localStorage.getItem("rf_lang") || "zh";
+let theme = localStorage.getItem("rf_theme")
+  || (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
 function t(key, ...args) {
   let s = (I18N[lang] && I18N[lang][key]) ?? (I18N.zh[key] ?? key);
   return s.replace(/\{(\d+)\}/g, (_, i) => args[i] ?? "");
 }
 function resetLabel(type) { return I18N[lang]["rt_" + type] ?? type; }
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", theme);
+  document.querySelectorAll("#themeToggle button").forEach(b => {
+    const opt = b.getAttribute("data-theme-opt");
+    b.classList.toggle("active", opt === theme);
+    b.title = t(opt === "dark" ? "theme_dark" : "theme_light");
+  });
+}
+
+function setTheme(mode) {
+  theme = mode;
+  localStorage.setItem("rf_theme", mode);
+  applyTheme();
+}
 
 function applyStatic() {
   document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
@@ -298,8 +356,9 @@ function applyStatic() {
   document.querySelectorAll("[data-i18n-ph]").forEach(el => {
     el.placeholder = t(el.getAttribute("data-i18n-ph"));
   });
-  document.querySelectorAll(".lang-toggle button").forEach(b =>
+  document.querySelectorAll("#langToggle button").forEach(b =>
     b.classList.toggle("active", b.getAttribute("data-lang") === lang));
+  applyTheme();  // refresh theme-button tooltips for the new language
 }
 
 function setLang(l) {
