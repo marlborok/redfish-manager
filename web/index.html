@@ -34,6 +34,8 @@
     border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
   .power-btns button:hover { background:#eef2f7; }
   .power-btns button.danger { border-color:var(--crit); color:var(--crit); }
+  .power-btns button:disabled { opacity:.35; cursor:not-allowed; }
+  .power-btns button:disabled:hover { background:#fff; }
   .msg { font-size:13px; margin-top:8px; }
   .err { color:var(--crit); }
   .muted { color:#999; font-size:13px; }
@@ -122,6 +124,7 @@ const I18N = {
   zh: {
     updated_at: "更新於 {0}",
     paused_hint: "⏸ 互動中,已暫停自動更新",
+    na_already_on: "系統已開機,無需再開機", na_already_off: "系統已關機,此操作需在開機狀態下執行",
     ph_name: "名稱", ph_host: "BMC IP", ph_user: "帳號", ph_pass: "密碼",
     add_device: "新增設備", connecting: "連線探測中…", added: "已加入 ✓",
     failed: "失敗:{0}",
@@ -198,6 +201,7 @@ const I18N = {
   en: {
     updated_at: "Updated at {0}",
     paused_hint: "⏸ Interacting — auto-refresh paused",
+    na_already_on: "System is already powered On", na_already_off: "System is powered Off; this action requires it to be On",
     ph_name: "Name", ph_host: "BMC IP", ph_user: "Username", ph_pass: "Password",
     add_device: "Add Device", connecting: "Connecting & discovering…", added: "Added ✓",
     failed: "Failed: {0}",
@@ -300,6 +304,16 @@ function setLang(l) {
 const healthClass = h => h === "OK" ? "ok" : (h === "Warning" ? "warn" : (h ? "crit" : "off"));
 const esc = s => String(s ?? "–").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DANGEROUS = new Set(["ForceOff", "ForceRestart", "PowerCycle", "Nmi"]);
+// actions that only make sense in a given power state — disabled otherwise
+const DISABLE_WHEN_ON = new Set(["On", "ForceOn"]);
+const DISABLE_WHEN_OFF = new Set(["ForceOff", "GracefulShutdown", "GracefulRestart",
+                                  "ForceRestart", "PowerCycle", "Nmi"]);
+
+function resetDisabledReason(type, powerState) {
+  if (powerState === "On" && DISABLE_WHEN_ON.has(type)) return t("na_already_on");
+  if (powerState === "Off" && DISABLE_WHEN_OFF.has(type)) return t("na_already_off");
+  return null;
+}
 
 function sectionTable(title, headers, rows) {
   if (!rows.length) return "";
@@ -309,9 +323,10 @@ function sectionTable(title, headers, rows) {
 }
 
 function renderSystem(sys, profileSys, devId) {
-  const btns = (profileSys?.reset_types ?? []).map(type =>
-    `<button class="${DANGEROUS.has(type)?'danger':''}" onclick="doReset(event,${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`
-  ).join("");
+  const btns = (profileSys?.reset_types ?? []).map(type => {
+    const reason = resetDisabledReason(type, sys.power_state);
+    return `<button class="${DANGEROUS.has(type)?'danger':''}"${reason ? ` disabled title="${esc(reason)}"` : ""} onclick="doReset(event,${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`;
+  }).join("");
   return `
     <div class="row" style="align-items:center">
       <h2 style="margin:0;font-size:17px">${esc(sys.manufacturer)} ${esc(sys.model)}</h2>
