@@ -26,29 +26,36 @@
   .badge.crit { background:var(--crit); } .badge.off { background:#888; }
   table { border-collapse:collapse; width:100%; font-size:13px; }
   th, td { text-align:left; padding:5px 10px; border-bottom:1px solid #eee; }
-  th { color:#666; font-weight:600; background:#fafafa; }
+  th { color:#666; font-weight:600; background:#fafafa; position:sticky; top:0; z-index:1; }
   .temp-hot { color:var(--crit); font-weight:700; }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
-  .power-btns button { margin-right:8px; margin-bottom:6px; padding:6px 14px; border:1px solid #ccc;
-    border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
-  .power-btns button:hover { background:#eef2f7; }
-  .power-btns button.danger { border-color:var(--crit); color:var(--crit); }
-  .power-btns button:disabled { opacity:.35; cursor:not-allowed; }
-  .power-btns button:disabled:hover { background:#fff; }
+  /* unified button system */
+  .btn { padding:6px 14px; border-radius:6px; font-size:13px; cursor:pointer; line-height:1.4;
+    border:1px solid transparent; background:#fff; color:#333; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btn-primary { background:#1b2a41; color:#fff; border-color:#1b2a41; }
+  .btn-primary:hover:not(:disabled) { background:#26374f; }
+  .btn-ghost { border-color:#ccc; color:#333; }
+  .btn-ghost:hover:not(:disabled) { background:#eef2f7; }
+  .btn-danger { border-color:var(--crit); color:var(--crit); }
+  .btn-danger:hover:not(:disabled) { background:#fdecec; }
+  /* action groups (power control vs management) */
+  .actions { margin-top:14px; }
+  .action-group { margin-bottom:12px; }
+  .action-group:last-child { margin-bottom:0; }
+  .action-label { font-size:12px; color:#6b7280; margin-bottom:5px; }
+  .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
   .msg { font-size:13px; margin-top:8px; }
   .err { color:var(--crit); }
-  .muted { color:#999; font-size:13px; }
+  .muted { color:#6b7280; font-size:13px; }
   form.add input { padding:6px 10px; border:1px solid #ccc; border-radius:6px; margin-right:8px; font-size:13px; }
-  form.add button { padding:6px 16px; border:none; border-radius:6px; background:#1b2a41; color:#fff; cursor:pointer; }
   details.profile summary { cursor:pointer; font-size:13px; color:#666; }
   details.profile pre { font-size:11px; background:#f7f8fa; padding:10px; border-radius:6px; overflow:auto; max-height:280px; }
   dialog { border:none; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.25); padding:22px 26px; width:420px; max-width:92vw; }
   dialog::backdrop { background:rgba(0,0,0,.35); }
   dialog h3 { margin:0 0 12px; font-size:16px; }
   dialog .field { margin:10px 0; font-size:13px; }
-  dialog button.primary { background:#1b2a41; color:#fff; border:none; border-radius:6px; padding:7px 18px; cursor:pointer; }
-  dialog button.plain { background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 14px; cursor:pointer; margin-left:8px; }
   .progress-outer { background:#eee; border-radius:8px; height:14px; overflow:hidden; margin-top:10px; }
   .progress-inner { background:var(--ok); height:100%; width:0%; transition:width .5s; }
 </style>
@@ -71,7 +78,7 @@
       <input id="f-host" data-i18n-ph="ph_host" required>
       <input id="f-user" data-i18n-ph="ph_user" required>
       <input id="f-pass" data-i18n-ph="ph_pass" type="password" required>
-      <button data-i18n="add_device"></button>
+      <button class="btn btn-primary" data-i18n="add_device"></button>
       <span class="msg" id="add-msg"></span>
     </form>
   </div>
@@ -88,19 +95,19 @@
   <div class="field err" id="bd-power-warn" style="display:none" data-i18n="power_off_warn"></div>
   <div class="field"><input type="file" id="bd-file"></div>
   <div class="field"><label><input type="checkbox" id="bd-preserve" checked> <span data-i18n="backup_before_update"></span></label></div>
-  <div class="field">
-    <button class="primary" id="bd-start" onclick="startBiosUpdate()" data-i18n="start_update"></button>
-    <button class="plain" onclick="closeBiosDialog()" data-i18n="close"></button>
-    <button class="plain" onclick="biosBackupOnly()" data-i18n="backup_only"></button>
+  <div class="field btn-row">
+    <button class="btn btn-primary" id="bd-start" onclick="startBiosUpdate()" data-i18n="start_update"></button>
+    <button class="btn btn-ghost" onclick="closeBiosDialog()" data-i18n="close"></button>
+    <button class="btn btn-ghost" onclick="biosBackupOnly()" data-i18n="backup_only"></button>
   </div>
   <div class="progress-outer" id="bd-bar-outer" style="display:none"><div class="progress-inner" id="bd-bar"></div></div>
   <div class="msg" id="bd-msg"></div>
   <hr style="margin:16px 0;border:none;border-top:1px solid #eee">
   <h3 data-i18n="bios_restore_title"></h3>
   <div class="field"><select id="bd-backup" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px"></select></div>
-  <div class="field">
-    <button class="plain" style="margin-left:0" onclick="biosRestorePreview()" data-i18n="preview_diff"></button>
-    <button class="primary" style="margin-left:8px" onclick="biosRestore()" data-i18n="restore_settings"></button>
+  <div class="field btn-row">
+    <button class="btn btn-ghost" onclick="biosRestorePreview()" data-i18n="preview_diff"></button>
+    <button class="btn btn-primary" onclick="biosRestore()" data-i18n="restore_settings"></button>
   </div>
   <div id="bd-diff" style="max-height:180px;overflow:auto;font-size:12px"></div>
   <div class="msg" id="bd-restore-msg"></div>
@@ -110,9 +117,9 @@
   <h3><span data-i18n="event_log"></span> <span class="muted" id="ld-host" style="font-weight:400;font-size:13px"></span></h3>
   <div class="field" style="display:flex;gap:8px;align-items:center">
     <select id="ld-service" style="flex:1;padding:6px;border:1px solid #ccc;border-radius:6px" onchange="loadLogEntries()"></select>
-    <button class="plain" style="margin-left:0" onclick="loadLogEntries()" data-i18n="refresh"></button>
-    <button class="plain" style="border-color:var(--crit);color:var(--crit)" onclick="clearLog()" data-i18n="clear_log"></button>
-    <button class="plain" onclick="closeLogDialog()" data-i18n="close"></button>
+    <button class="btn btn-ghost" onclick="loadLogEntries()" data-i18n="refresh"></button>
+    <button class="btn btn-danger" onclick="clearLog()" data-i18n="clear_log"></button>
+    <button class="btn btn-ghost" onclick="closeLogDialog()" data-i18n="close"></button>
   </div>
   <div class="msg" id="ld-msg"></div>
   <div style="max-height:420px;overflow:auto;margin-top:8px"><table id="ld-table"></table></div>
@@ -137,6 +144,7 @@ const I18N = {
     conn_failed: "連線失敗", backend_unreachable: "無法連線後端:{0}",
     health: "健康", power: "電源", serial: "序號", memory: "記憶體",
     power_control: "電源控制(此設備支援的操作)",
+    management: "管理與檢視",
     bios_update_btn: "BIOS 更新…", event_log_btn: "事件日誌…",
     temp_sensors: "溫度感測器({0})", col_sensor: "感測點", col_reading: "讀值",
     fans: "風扇", col_fan: "風扇", col_speed: "轉速",
@@ -214,6 +222,7 @@ const I18N = {
     conn_failed: "Connection failed", backend_unreachable: "Cannot reach backend: {0}",
     health: "Health", power: "Power", serial: "Serial", memory: "Memory",
     power_control: "Power Control (actions supported by this device)",
+    management: "Management & Inspection",
     bios_update_btn: "BIOS Update…", event_log_btn: "Event Log…",
     temp_sensors: "Temperature Sensors ({0})", col_sensor: "Sensor", col_reading: "Reading",
     fans: "Fans", col_fan: "Fan", col_speed: "Speed",
@@ -325,7 +334,7 @@ function sectionTable(title, headers, rows) {
 function renderSystem(sys, profileSys, devId) {
   const btns = (profileSys?.reset_types ?? []).map(type => {
     const reason = resetDisabledReason(type, sys.power_state);
-    return `<button class="${DANGEROUS.has(type)?'danger':''}"${reason ? ` disabled title="${esc(reason)}"` : ""} onclick="doReset(event,${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`;
+    return `<button class="btn ${DANGEROUS.has(type)?'btn-danger':'btn-ghost'}"${reason ? ` disabled title="${esc(reason)}"` : ""} onclick="doReset(event,${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`;
   }).join("");
   return `
     <div class="row" style="align-items:center">
@@ -339,12 +348,20 @@ function renderSystem(sys, profileSys, devId) {
       ${sys.cpu?.model ? `<div class="kv"><div class="k">CPU</div><div class="v">${esc(sys.cpu.model)}(×${sys.cpu.count})</div></div>` : ""}
       ${sys.memory_gib != null ? `<div class="kv"><div class="k">${t("memory")}</div><div class="v">${sys.memory_gib} GiB</div></div>` : ""}
     </div>
-    ${btns ? `<div style="margin-top:14px" class="power-btns" data-dev="${devId}">
-      <div class="k" style="font-size:12px;color:#777;margin-bottom:4px">${t("power_control")}</div>
-      ${btns}
-      <button style="border-color:#1b2a41;color:#1b2a41" onclick="openBiosDialog(${devId},'${esc(sys.bios_version)}')">${t("bios_update_btn")}</button>
-      <button style="border-color:#1b2a41;color:#1b2a41" onclick="openLogDialog(${devId})">${t("event_log_btn")}</button>
-      <div class="msg"></div></div>` : ""}`;
+    <div class="actions" data-dev="${devId}">
+      ${btns ? `<div class="action-group">
+        <div class="action-label">${t("power_control")}</div>
+        <div class="btn-row power-row">${btns}</div>
+      </div>` : ""}
+      <div class="action-group">
+        <div class="action-label">${t("management")}</div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="openBiosDialog(${devId},'${esc(sys.bios_version)}')">${t("bios_update_btn")}</button>
+          <button class="btn btn-ghost" onclick="openLogDialog(${devId})">${t("event_log_btn")}</button>
+        </div>
+      </div>
+      <div class="msg"></div>
+    </div>`;
 }
 
 function renderChassis(ch) {
@@ -389,9 +406,9 @@ function renderDevice(dev) {
 
 async function doReset(ev, devId, systemId, type) {
   if (!confirm(t("confirm_reset", systemId, resetLabel(type)))) return;
-  const group = document.querySelector(`.power-btns[data-dev="${devId}"]`);
+  const group = document.querySelector(`.actions[data-dev="${devId}"]`);
   const msg = group.querySelector(".msg");
-  const btns = group.querySelectorAll("button");
+  const btns = group.querySelectorAll(".power-row button");
   msg.textContent = t("running"); msg.className = "msg";
   // disable every power button in this group while the request is in flight,
   // and pause auto-refresh so the feedback isn't wiped mid-operation
