@@ -8,8 +8,10 @@
 - **監控**:系統資訊、健康狀態、溫度/風扇/PSU 感測器,背景每 30 秒輪詢,歷史存 SQLite
 - **電源控制**:依設備支援的 ResetType 動態產生(On / ForceOff / GracefulShutdown / PowerCycle / NMI…)
 - **BIOS 韌體更新**:上傳映像 → 自動追蹤刷寫進度;強制要求主機關機(Off)狀態才可更新
-- **BIOS 設定備份/還原**:備份 564+ 項 BIOS Attributes 成 JSON;還原前可預覽差異,只推送有變動的設定
+- **BIOS 設定備份/還原**:備份數百項 BIOS Attributes 成 JSON;還原前可預覽差異,只推送有變動的設定
+- **SEL 事件日誌**:讀取 IPMI SEL / BMC Event / Audit 等日誌服務,新到舊排列,可清除
 - **操作紀錄**:備份/更新/還原的過程與結果(成功/失敗/進行中)都留痕在頁面頂部狀態列
+- **中英雙語**:右上角開關即時切換,選擇記憶在瀏覽器
 
 ## 環境需求
 
@@ -17,26 +19,45 @@
 - 可連到 BMC 管理網路(HTTPS, self-signed 憑證亦可)
 - Windows / Linux 皆可執行
 
+## 取得程式(從私有 GitHub repo clone)
+
+本專案放在**私有** repo,需要先請擁有者(marlborok)到
+GitHub → repo → Settings → Collaborators 邀請你,接受邀請後才能 clone。
+
+```bash
+git clone https://github.com/marlborok/redfish-manager.git
+cd redfish-manager
+```
+
+> 第一次 clone/push 時,Windows 的 Git 憑證管理員可能會跳出瀏覽器要你登入 GitHub 授權,完成即可。
+> 沒有 git 也可以請擁有者用 GitHub 的「Download ZIP」下載後解壓。
+
 ## 安裝步驟
 
 ```bash
-# 1. 取得程式(git clone 或直接複製整個 redfish_manager 資料夾)
-cd redfish_manager
-
-# 2. (建議)建立虛擬環境
+# 1. (建議)建立虛擬環境
 python -m venv venv
 # Windows:
 venv\Scripts\activate
 # Linux/macOS:
 source venv/bin/activate
 
-# 3. 安裝相依套件
+# 2. 安裝相依套件
 pip install -r requirements.txt
 ```
 
 ## 設定
 
-在專案根目錄建立 `redfish_manager.env`(第一台設備,啟動時自動加入):
+複製範例檔並填入你的 BMC 連線資訊(這是啟動時自動加入的第一台設備):
+
+```bash
+# Windows:
+copy redfish_manager.env.example redfish_manager.env
+# Linux/macOS:
+cp redfish_manager.env.example redfish_manager.env
+```
+
+編輯 `redfish_manager.env`:
 
 ```
 BMC_HOST=192.168.0.11
@@ -46,7 +67,7 @@ POLL_INTERVAL=30
 ```
 
 > 之後的設備直接在網頁上方的「新增設備」表單加入即可,不需改設定檔。
-> 此檔含帳密,已列入 `.gitignore`,請勿提交到版控。
+> `redfish_manager.env` 含帳密,已列入 `.gitignore`,不會被提交;範例檔 `redfish_manager.env.example` 才會進版控。
 
 ## 啟動
 
