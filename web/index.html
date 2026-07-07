@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Redfish Manager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ok:#2e9e5b; --warn:#d98c00; --crit:#d0342c; --bg:#f4f6f8; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:#222; }
+  header { background:#1b2a41; color:#fff; padding:14px 24px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header .right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+  header .ts { font-size:12px; opacity:.7; }
+  .lang-toggle { display:flex; border:1px solid rgba(255,255,255,.35); border-radius:6px; overflow:hidden; }
+  .lang-toggle button { background:transparent; color:#fff; border:none; padding:4px 10px; cursor:pointer; font-size:12px; }
+  .lang-toggle button.active { background:#fff; color:#1b2a41; font-weight:600; }
+  main { padding:20px 24px; max-width:1100px; margin:0 auto; }
+  .card { background:var(--card); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:18px 20px; margin-bottom:18px; }
+  .row { display:flex; flex-wrap:wrap; gap:24px; }
+  .kv { min-width:150px; }
+  .kv .k { font-size:12px; color:#777; }
+  .kv .v { font-size:15px; font-weight:600; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:12px; color:#fff; font-size:12px; font-weight:600; }
+  .badge.ok { background:var(--ok); } .badge.warn { background:var(--warn); }
+  .badge.crit { background:var(--crit); } .badge.off { background:#888; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:5px 10px; border-bottom:1px solid #eee; }
+  th { color:#666; font-weight:600; background:#fafafa; }
+  .temp-hot { color:var(--crit); font-weight:700; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
+  .power-btns button { margin-right:8px; margin-bottom:6px; padding:6px 14px; border:1px solid #ccc;
+    border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
+  .power-btns button:hover { background:#eef2f7; }
+  .power-btns button.danger { border-color:var(--crit); color:var(--crit); }
+  .msg { font-size:13px; margin-top:8px; }
+  .err { color:var(--crit); }
+  .muted { color:#999; font-size:13px; }
+  form.add input { padding:6px 10px; border:1px solid #ccc; border-radius:6px; margin-right:8px; font-size:13px; }
+  form.add button { padding:6px 16px; border:none; border-radius:6px; background:#1b2a41; color:#fff; cursor:pointer; }
+  details.profile summary { cursor:pointer; font-size:13px; color:#666; }
+  details.profile pre { font-size:11px; background:#f7f8fa; padding:10px; border-radius:6px; overflow:auto; max-height:280px; }
+  dialog { border:none; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.25); padding:22px 26px; width:420px; max-width:92vw; }
+  dialog::backdrop { background:rgba(0,0,0,.35); }
+  dialog h3 { margin:0 0 12px; font-size:16px; }
+  dialog .field { margin:10px 0; font-size:13px; }
+  dialog button.primary { background:#1b2a41; color:#fff; border:none; border-radius:6px; padding:7px 18px; cursor:pointer; }
+  dialog button.plain { background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 14px; cursor:pointer; margin-left:8px; }
+  .progress-outer { background:#eee; border-radius:8px; height:14px; overflow:hidden; margin-top:10px; }
+  .progress-inner { background:var(--ok); height:100%; width:0%; transition:width .5s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖥️ Redfish Manager</h1>
+  <div class="right">
+    <span class="ts" id="lastUpdate"></span>
+    <div class="lang-toggle">
+      <button data-lang="zh" onclick="setLang('zh')">中文</button>
+      <button data-lang="en" onclick="setLang('en')">EN</button>
+    </div>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <form class="add" onsubmit="addDevice(event)">
+      <input id="f-name" data-i18n-ph="ph_name" required>
+      <input id="f-host" data-i18n-ph="ph_host" required>
+      <input id="f-user" data-i18n-ph="ph_user" required>
+      <input id="f-pass" data-i18n-ph="ph_pass" type="password" required>
+      <button data-i18n="add_device"></button>
+      <span class="msg" id="add-msg"></span>
+    </form>
+  </div>
+  <div class="card" id="activityCard" style="display:none">
+    <h3 style="font-size:14px;margin:0 0 8px" data-i18n="activity_log"></h3>
+    <div style="max-height:180px;overflow:auto"><table id="activityTable"></table></div>
+  </div>
+  <div id="app"></div>
+</main>
+
+<dialog id="biosDialog">
+  <h3 data-i18n="bios_update_title"></h3>
+  <div class="field"><span data-i18n="device"></span>:<b id="bd-host"></b> · <span data-i18n="current_version"></span>:<b id="bd-version"></b> · <span data-i18n="power"></span>:<b id="bd-power"></b></div>
+  <div class="field err" id="bd-power-warn" style="display:none" data-i18n="power_off_warn"></div>
+  <div class="field"><input type="file" id="bd-file"></div>
+  <div class="field"><label><input type="checkbox" id="bd-preserve" checked> <span data-i18n="backup_before_update"></span></label></div>
+  <div class="field">
+    <button class="primary" id="bd-start" onclick="startBiosUpdate()" data-i18n="start_update"></button>
+    <button class="plain" onclick="closeBiosDialog()" data-i18n="close"></button>
+    <button class="plain" onclick="biosBackupOnly()" data-i18n="backup_only"></button>
+  </div>
+  <div class="progress-outer" id="bd-bar-outer" style="display:none"><div class="progress-inner" id="bd-bar"></div></div>
+  <div class="msg" id="bd-msg"></div>
+  <hr style="margin:16px 0;border:none;border-top:1px solid #eee">
+  <h3 data-i18n="bios_restore_title"></h3>
+  <div class="field"><select id="bd-backup" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px"></select></div>
+  <div class="field">
+    <button class="plain" style="margin-left:0" onclick="biosRestorePreview()" data-i18n="preview_diff"></button>
+    <button class="primary" style="margin-left:8px" onclick="biosRestore()" data-i18n="restore_settings"></button>
+  </div>
+  <div id="bd-diff" style="max-height:180px;overflow:auto;font-size:12px"></div>
+  <div class="msg" id="bd-restore-msg"></div>
+</dialog>
+
+<dialog id="logDialog" style="width:760px">
+  <h3><span data-i18n="event_log"></span> <span class="muted" id="ld-host" style="font-weight:400;font-size:13px"></span></h3>
+  <div class="field" style="display:flex;gap:8px;align-items:center">
+    <select id="ld-service" style="flex:1;padding:6px;border:1px solid #ccc;border-radius:6px" onchange="loadLogEntries()"></select>
+    <button class="plain" style="margin-left:0" onclick="loadLogEntries()" data-i18n="refresh"></button>
+    <button class="plain" style="border-color:var(--crit);color:var(--crit)" onclick="clearLog()" data-i18n="clear_log"></button>
+    <button class="plain" onclick="closeLogDialog()" data-i18n="close"></button>
+  </div>
+  <div class="msg" id="ld-msg"></div>
+  <div style="max-height:420px;overflow:auto;margin-top:8px"><table id="ld-table"></table></div>
+</dialog>
+
+<script>
+// ==================== i18n ====================
+const I18N = {
+  zh: {
+    updated_at: "更新於 {0}",
+    ph_name: "名稱", ph_host: "BMC IP", ph_user: "帳號", ph_pass: "密碼",
+    add_device: "新增設備", connecting: "連線探測中…", added: "已加入 ✓",
+    failed: "失敗:{0}",
+    activity_log: "操作紀錄",
+    col_time: "時間", col_device: "設備", col_action: "操作", col_status: "狀態", col_message: "訊息",
+    kind_backup: "備份", kind_update: "BIOS 更新", kind_restore: "還原", kind_clearlog: "清除日誌",
+    st_running: "進行中", st_success: "成功", st_failed: "失敗",
+    loading: "載入中…", no_devices: "尚未加入任何設備",
+    no_data: "尚無資料,等待第一次輪詢與探測…",
+    conn_failed: "連線失敗", backend_unreachable: "無法連線後端:{0}",
+    health: "健康", power: "電源", serial: "序號", memory: "記憶體",
+    power_control: "電源控制(此設備支援的操作)",
+    bios_update_btn: "BIOS 更新…", event_log_btn: "事件日誌…",
+    temp_sensors: "溫度感測器({0})", col_sensor: "感測點", col_reading: "讀值",
+    fans: "風扇", col_fan: "風扇", col_speed: "轉速",
+    psus: "電源供應器", col_psu: "PSU", col_watts: "功率",
+    other_sensors: "其他感測器", col_name: "名稱", col_type: "類型",
+    bmc_fw: "BMC 韌體({0})", profile_summary: "裝置能力 profile(discovery 結果)",
+    confirm_reset: "確定要對 {0} 執行「{1}」嗎?",
+    running: "執行中…", sent: "已送出 {0}",
+    // BIOS dialog
+    bios_update_title: "BIOS 韌體更新",
+    device: "設備", current_version: "目前版本",
+    power_off_warn: "⚠ BIOS 更新需要主機在關機(Off)狀態下進行,請先用電源控制關機。",
+    backup_before_update: "更新前備份 BIOS 設定(存到伺服器 bios_backups/)",
+    start_update: "開始更新", close: "關閉", backup_only: "只備份設定",
+    bios_restore_title: "BIOS 設定還原", preview_diff: "比對差異", restore_settings: "還原設定",
+    no_backup_yet: "(此設備尚無備份)", load_backup_failed: "(載入備份清單失敗)",
+    no_backup_selected: "沒有可用的備份檔", comparing: "比對中…",
+    settings_match: "設定與備份一致(共 {0} 項),無需還原",
+    col_setting: "設定項", col_current: "目前值", col_restore_to: "還原為",
+    diff_count: "{0} 項差異", diff_skipped: ";{0} 項備份中的設定在現機不存在,將略過",
+    compare_failed: "比對失敗:{0}",
+    confirm_restore: "確定要用「{0}」還原 BIOS 設定嗎?\n還原後需要主機重開機才會生效。",
+    restoring: "還原中…", restore_ok: "✅ {0}({1} 項)", restore_failed: "還原失敗:{0}",
+    backing_up: "備份中…", backup_ok: "已備份 {0} 個設定 → {1}", backup_failed: "備份失敗:{0}",
+    select_image_first: "請先選擇 BIOS 映像檔",
+    power_not_off: "主機電源狀態為 {0},BIOS 更新前請先關機(可用電源控制的「正常關機」)",
+    confirm_flash: "確定要將「{0}」刷入 BIOS 嗎?\n過程中請勿關閉 BMC 電源。",
+    uploading: "上傳映像中(檔案較大請耐心等候)…",
+    upload_done: "上傳完成({0} MB){1},Task {2} 開始刷寫…",
+    settings_backed_up: ",已備份設定",
+    update_failed: "更新失敗:{0}",
+    flash_complete: "✅ BIOS 更新完成!重開機後生效。",
+    flash_failed: "❌ 更新失敗(TaskState: {0})",
+    flashing: "刷寫中… {0}", bmc_reconnecting: "BMC 連線暫時中斷,重試中…(刷寫期間屬正常現象)",
+    power_unknown: "未知",
+    // Log dialog
+    event_log: "事件日誌", refresh: "重新整理", clear_log: "清除日誌",
+    no_log_services: "(此設備無日誌服務)",
+    log_summary: "共 {0} 筆,顯示最新 {1} 筆(新到舊)",
+    col_severity: "嚴重性", col_sensor_type: "感測類型", col_event: "事件",
+    load_failed: "載入失敗:{0}",
+    confirm_clear: "確定要清除「{0}」的所有日誌嗎?此動作無法復原。",
+    clearing: "清除中…", cleared: "已清除,重新載入…", clear_failed: "清除失敗:{0}",
+    // Activity log messages (rendered from backend msg_code + params)
+    act_clearlog_start: "清除 {0} 中…", act_clearlog_failed: "清除 {0} 失敗:{1}", act_clearlog_success: "已清除 {0}",
+    act_backup_start: "讀取 BIOS 設定中…", act_backup_failed: "備份失敗:{0}", act_backup_success: "已備份 {0} 個設定 → {1}",
+    act_restore_start: "還原 {0} 比對中…", act_restore_noop: "設定與備份一致,無需還原",
+    act_restore_failed: "還原失敗:{0}", act_restore_success: "已還原 {0} 個設定({1}),主機重開機後生效",
+    act_update_rejected: "已拒絕更新 {0}:主機電源狀態為 {1},需先關機",
+    act_update_start: "上傳 {0}({1} MB)…", act_update_upload_failed: "上傳失敗:{0}",
+    act_update_uploaded: "{0} 上傳完成,Task {1} 刷寫中…",
+    act_update_uploaded_bak: "{0} 上傳完成,已備份設定 {2},Task {1} 刷寫中…",
+    act_update_failed: "更新失敗:{0}",
+    act_update_task_complete: "Task {0} 刷寫完成,主機重開機後生效",
+    act_update_task_failed: "Task {0} 刷寫失敗(Exception)",
+    // Reset types
+    rt_On: "開機", rt_ForceOff: "強制斷電", rt_GracefulShutdown: "正常關機",
+    rt_GracefulRestart: "正常重啟", rt_ForceRestart: "強制重啟", rt_PowerCycle: "電源循環",
+    rt_Nmi: "NMI 中斷", rt_ForceOn: "強制開機", rt_PushPowerButton: "電源鍵",
+    rt_Pause: "暫停", rt_Resume: "恢復", rt_Suspend: "休眠",
+  },
+  en: {
+    updated_at: "Updated at {0}",
+    ph_name: "Name", ph_host: "BMC IP", ph_user: "Username", ph_pass: "Password",
+    add_device: "Add Device", connecting: "Connecting & discovering…", added: "Added ✓",
+    failed: "Failed: {0}",
+    activity_log: "Activity Log",
+    col_time: "Time", col_device: "Device", col_action: "Action", col_status: "Status", col_message: "Message",
+    kind_backup: "Backup", kind_update: "BIOS Update", kind_restore: "Restore", kind_clearlog: "Clear Log",
+    st_running: "Running", st_success: "Success", st_failed: "Failed",
+    loading: "Loading…", no_devices: "No devices added yet",
+    no_data: "No data yet, waiting for first poll & discovery…",
+    conn_failed: "Connection failed", backend_unreachable: "Cannot reach backend: {0}",
+    health: "Health", power: "Power", serial: "Serial", memory: "Memory",
+    power_control: "Power Control (actions supported by this device)",
+    bios_update_btn: "BIOS Update…", event_log_btn: "Event Log…",
+    temp_sensors: "Temperature Sensors ({0})", col_sensor: "Sensor", col_reading: "Reading",
+    fans: "Fans", col_fan: "Fan", col_speed: "Speed",
+    psus: "Power Supplies", col_psu: "PSU", col_watts: "Power",
+    other_sensors: "Other Sensors", col_name: "Name", col_type: "Type",
+    bmc_fw: "BMC Firmware ({0})", profile_summary: "Device capability profile (discovery result)",
+    confirm_reset: "Run \"{1}\" on {0}?",
+    running: "Running…", sent: "Sent {0}",
+    bios_update_title: "BIOS Firmware Update",
+    device: "Device", current_version: "Current version",
+    power_off_warn: "⚠ BIOS update requires the host to be powered Off. Please power off first via Power Control.",
+    backup_before_update: "Back up BIOS settings before update (saved to bios_backups/ on server)",
+    start_update: "Start Update", close: "Close", backup_only: "Backup Only",
+    bios_restore_title: "BIOS Settings Restore", preview_diff: "Preview Diff", restore_settings: "Restore Settings",
+    no_backup_yet: "(no backups for this device)", load_backup_failed: "(failed to load backup list)",
+    no_backup_selected: "No backup selected", comparing: "Comparing…",
+    settings_match: "Settings match the backup ({0} items), nothing to restore",
+    col_setting: "Setting", col_current: "Current", col_restore_to: "Restore to",
+    diff_count: "{0} difference(s)", diff_skipped: "; {0} saved setting(s) not present on current BIOS, will be skipped",
+    compare_failed: "Compare failed: {0}",
+    confirm_restore: "Restore BIOS settings from \"{0}\"?\nA host reboot is required to take effect.",
+    restoring: "Restoring…", restore_ok: "✅ {0} ({1} items)", restore_failed: "Restore failed: {0}",
+    backing_up: "Backing up…", backup_ok: "Backed up {0} settings → {1}", backup_failed: "Backup failed: {0}",
+    select_image_first: "Please select a BIOS image first",
+    power_not_off: "Host power is {0}. Please power off before BIOS update (use GracefulShutdown in Power Control).",
+    confirm_flash: "Flash \"{0}\" to BIOS?\nDo not cut BMC power during the process.",
+    uploading: "Uploading image (large files may take a while)…",
+    upload_done: "Upload complete ({0} MB){1}, Task {2} flashing…",
+    settings_backed_up: ", settings backed up",
+    update_failed: "Update failed: {0}",
+    flash_complete: "✅ BIOS update complete! Takes effect after reboot.",
+    flash_failed: "❌ Update failed (TaskState: {0})",
+    flashing: "Flashing… {0}", bmc_reconnecting: "BMC connection temporarily lost, retrying… (normal during flashing)",
+    power_unknown: "unknown",
+    event_log: "Event Log", refresh: "Refresh", clear_log: "Clear Log",
+    no_log_services: "(no log services on this device)",
+    log_summary: "{0} total, showing latest {1} (newest first)",
+    col_severity: "Severity", col_sensor_type: "Sensor Type", col_event: "Event",
+    load_failed: "Load failed: {0}",
+    confirm_clear: "Clear all logs of \"{0}\"? This cannot be undone.",
+    clearing: "Clearing…", cleared: "Cleared, reloading…", clear_failed: "Clear failed: {0}",
+    act_clearlog_start: "Clearing {0}…", act_clearlog_failed: "Failed to clear {0}: {1}", act_clearlog_success: "Cleared {0}",
+    act_backup_start: "Reading BIOS settings…", act_backup_failed: "Backup failed: {0}", act_backup_success: "Backed up {0} settings → {1}",
+    act_restore_start: "Comparing for restore from {0}…", act_restore_noop: "Settings match the backup, nothing to restore",
+    act_restore_failed: "Restore failed: {0}", act_restore_success: "Restored {0} settings ({1}), takes effect after host reboot",
+    act_update_rejected: "Update of {0} rejected: host power is {1}, must power off first",
+    act_update_start: "Uploading {0} ({1} MB)…", act_update_upload_failed: "Upload failed: {0}",
+    act_update_uploaded: "{0} uploaded, Task {1} flashing…",
+    act_update_uploaded_bak: "{0} uploaded, settings backed up ({2}), Task {1} flashing…",
+    act_update_failed: "Update failed: {0}",
+    act_update_task_complete: "Task {0} flash complete, takes effect after host reboot",
+    act_update_task_failed: "Task {0} flash failed (Exception)",
+    rt_On: "Power On", rt_ForceOff: "Force Off", rt_GracefulShutdown: "Graceful Shutdown",
+    rt_GracefulRestart: "Graceful Restart", rt_ForceRestart: "Force Restart", rt_PowerCycle: "Power Cycle",
+    rt_Nmi: "NMI", rt_ForceOn: "Force On", rt_PushPowerButton: "Power Button",
+    rt_Pause: "Pause", rt_Resume: "Resume", rt_Suspend: "Suspend",
+  },
+};
+
+let lang = localStorage.getItem("rf_lang") || "zh";
+
+function t(key, ...args) {
+  let s = (I18N[lang] && I18N[lang][key]) ?? (I18N.zh[key] ?? key);
+  return s.replace(/\{(\d+)\}/g, (_, i) => args[i] ?? "");
+}
+function resetLabel(type) { return I18N[lang]["rt_" + type] ?? type; }
+
+function applyStatic() {
+  document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.placeholder = t(el.getAttribute("data-i18n-ph"));
+  });
+  document.querySelectorAll(".lang-toggle button").forEach(b =>
+    b.classList.toggle("active", b.getAttribute("data-lang") === lang));
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem("rf_lang", l);
+  applyStatic();
+  refresh();
+}
+
+// ==================== helpers ====================
+const healthClass = h => h === "OK" ? "ok" : (h === "Warning" ? "warn" : (h ? "crit" : "off"));
+const esc = s => String(s ?? "–").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DANGEROUS = new Set(["ForceOff", "ForceRestart", "PowerCycle", "Nmi"]);
+
+function sectionTable(title, headers, rows) {
+  if (!rows.length) return "";
+  return `<div><h3 style="font-size:14px;margin:14px 0 6px">${title}</h3>
+    <div style="max-height:320px;overflow:auto"><table>
+    <tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr>${rows.join("")}</table></div></div>`;
+}
+
+function renderSystem(sys, profileSys, devId) {
+  const btns = (profileSys?.reset_types ?? []).map(type =>
+    `<button class="${DANGEROUS.has(type)?'danger':''}" onclick="doReset(${devId},'${esc(sys.id)}','${type}')">${esc(resetLabel(type))}</button>`
+  ).join("");
+  return `
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0;font-size:17px">${esc(sys.manufacturer)} ${esc(sys.model)}</h2>
+      <span class="badge ${healthClass(sys.health)}">${t("health")}: ${esc(sys.health)}</span>
+      <span class="badge ${sys.power_state==="On"?"ok":"off"}">${t("power")}: ${esc(sys.power_state)}</span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="kv"><div class="k">${t("serial")}</div><div class="v">${esc(sys.serial)}</div></div>
+      <div class="kv"><div class="k">BIOS</div><div class="v">${esc(sys.bios_version)}</div></div>
+      ${sys.cpu?.model ? `<div class="kv"><div class="k">CPU</div><div class="v">${esc(sys.cpu.model)}(×${sys.cpu.count})</div></div>` : ""}
+      ${sys.memory_gib != null ? `<div class="kv"><div class="k">${t("memory")}</div><div class="v">${sys.memory_gib} GiB</div></div>` : ""}
+    </div>
+    ${btns ? `<div style="margin-top:14px" class="power-btns" data-dev="${devId}">
+      <div class="k" style="font-size:12px;color:#777;margin-bottom:4px">${t("power_control")}</div>
+      ${btns}
+      <button style="border-color:#1b2a41;color:#1b2a41" onclick="openBiosDialog(${devId},'${esc(sys.bios_version)}')">${t("bios_update_btn")}</button>
+      <button style="border-color:#1b2a41;color:#1b2a41" onclick="openLogDialog(${devId})">${t("event_log_btn")}</button>
+      <div class="msg"></div></div>` : ""}`;
+}
+
+function renderChassis(ch) {
+  const temps = [...(ch.temperatures ?? [])].sort((a,b)=>(b.celsius??0)-(a.celsius??0));
+  const tempRows = temps.map(tp=>{
+    const hot = tp.upper_critical && tp.celsius >= tp.upper_critical - 10;
+    return `<tr><td>${esc(tp.name)}</td><td class="${hot?'temp-hot':''}">${tp.celsius} °C</td><td><span class="badge ${healthClass(tp.health)}">${esc(tp.health)}</span></td></tr>`;
+  });
+  const fanRows = (ch.fans ?? []).map(f=>`<tr><td>${esc(f.name)}</td><td>${f.rpm} RPM</td><td><span class="badge ${healthClass(f.health)}">${esc(f.health)}</span></td></tr>`);
+  const psuRows = (ch.psus ?? []).map(p=>`<tr><td>${esc(p.name)}</td><td>${p.watts ?? "–"} W</td><td><span class="badge ${healthClass(p.health)}">${esc(p.health)}</span></td></tr>`);
+  const sensorRows = (ch.sensors ?? []).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.reading} ${esc(s.units ?? "")}</td><td>${esc(s.type)}</td><td><span class="badge ${healthClass(s.health)}">${esc(s.health)}</span></td></tr>`);
+  const left = sectionTable(t("temp_sensors", esc(ch.id)), [t("col_sensor"),t("col_reading"),t("col_status")], tempRows);
+  const right =
+    sectionTable(t("fans"), [t("col_fan"),t("col_speed"),t("col_status")], fanRows) +
+    sectionTable(t("psus"), [t("col_psu"),t("col_watts"),t("col_status")], psuRows) +
+    sectionTable(t("other_sensors"), [t("col_name"),t("col_reading"),t("col_type"),t("col_status")], sensorRows);
+  if (!left && !right) return "";
+  return `<div class="cols" style="margin-top:16px">${left ? `<div>${left}</div>` : ""}${right ? `<div>${right}</div>` : ""}</div>`;
+}
+
+function renderDevice(dev) {
+  const snap = dev.snapshot;
+  const head = `<b>${esc(dev.name)}</b> <span class="muted">(${esc(dev.host)}${dev.profile ? ` · ${esc(dev.profile.vendor)} Redfish ${esc(dev.profile.redfish_version)}` : ""})</span>`;
+  if (!snap) return `<div class="card">${head}<div class="muted">${t("no_data")}</div></div>`;
+  if (!snap.ok) return `<div class="card">${head} <span class="badge crit">${t("conn_failed")}</span><div class="err msg">${esc(snap.error)}</div></div>`;
+  const d = snap.data;
+  const systems = (d.systems ?? []).map(sys => {
+    const pSys = (dev.profile?.systems ?? []).find(p => p.id === sys.id);
+    return renderSystem(sys, pSys, dev.id);
+  }).join("<hr>");
+  const chassis = (d.chassis ?? []).map(renderChassis).join("");
+  const mgrs = (dev.profile?.managers ?? []).map(m =>
+    `<div class="kv"><div class="k">${t("bmc_fw", esc(m.id))}</div><div class="v">${esc(m.firmware_version)}</div></div>`).join("");
+  return `<div class="card">
+    <div class="muted" style="margin-bottom:8px">${head}</div>
+    ${systems}${chassis}
+    ${mgrs ? `<div class="row" style="margin-top:14px">${mgrs}</div>` : ""}
+    <details class="profile" style="margin-top:12px"><summary>${t("profile_summary")}</summary>
+      <pre>${esc(JSON.stringify(dev.profile, null, 2))}</pre></details>
+  </div>`;
+}
+
+async function doReset(devId, systemId, type) {
+  if (!confirm(t("confirm_reset", systemId, resetLabel(type)))) return;
+  const msg = document.querySelector(`.power-btns[data-dev="${devId}"] .msg`);
+  msg.textContent = t("running"); msg.className = "msg";
+  try {
+    const r = await fetch(`/api/devices/${devId}/reset`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({system_id: systemId, reset_type: type})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    msg.textContent = t("sent", type);
+  } catch(e) { msg.textContent = t("failed", e.message); msg.className = "msg err"; }
+}
+
+async function addDevice(ev) {
+  ev.preventDefault();
+  const msg = document.getElementById("add-msg");
+  msg.textContent = t("connecting"); msg.className = "msg";
+  try {
+    const r = await fetch("/api/devices", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        name: document.getElementById("f-name").value,
+        host: document.getElementById("f-host").value,
+        username: document.getElementById("f-user").value,
+        password: document.getElementById("f-pass").value,
+      })
+    });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    msg.textContent = t("added"); ev.target.reset(); refresh();
+  } catch(e) { msg.textContent = t("failed", e.message); msg.className = "msg err"; }
+}
+
+// ---------------- BIOS update dialog ----------------
+let biosDev = null, biosPolling = null;
+
+function openBiosDialog(devId, version) {
+  biosDev = devId;
+  const dev = (window._devices ?? []).find(d => d.id === devId);
+  document.getElementById("bd-host").textContent = dev ? `${dev.name}(${dev.host})` : `#${devId}`;
+  document.getElementById("bd-version").textContent = version;
+  const power = dev?.snapshot?.data?.systems?.[0]?.power_state ?? "?";
+  document.getElementById("bd-power").textContent = power;
+  document.getElementById("bd-power-warn").style.display = power === "Off" ? "none" : "";
+  document.getElementById("bd-msg").textContent = "";
+  document.getElementById("bd-restore-msg").textContent = "";
+  document.getElementById("bd-diff").innerHTML = "";
+  document.getElementById("bd-bar-outer").style.display = "none";
+  document.getElementById("bd-start").disabled = false;
+  document.getElementById("biosDialog").showModal();
+  loadBackups();
+}
+
+async function loadBackups() {
+  const sel = document.getElementById("bd-backup");
+  try {
+    const list = await (await fetch(`/api/devices/${biosDev}/bios/backups`)).json();
+    sel.innerHTML = list.length
+      ? list.map(b => `<option value="${esc(b.name)}">${esc(b.name)}(${b.size_kb} KB)</option>`).join("")
+      : `<option value="">${t("no_backup_yet")}</option>`;
+  } catch(e) { sel.innerHTML = `<option value="">${t("load_backup_failed")}</option>`; }
+}
+
+async function biosRestorePreview() {
+  const backup = document.getElementById("bd-backup").value;
+  const msg = document.getElementById("bd-restore-msg");
+  const diffEl = document.getElementById("bd-diff");
+  if (!backup) { msg.textContent = t("no_backup_selected"); msg.className = "msg err"; return; }
+  msg.textContent = t("comparing"); msg.className = "msg"; diffEl.innerHTML = "";
+  try {
+    const r = await fetch(`/api/devices/${biosDev}/bios/restore/preview`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({backup_file: backup})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const d = await r.json();
+    if (!d.differences.length) {
+      msg.textContent = t("settings_match", d.total_saved);
+      return;
+    }
+    diffEl.innerHTML = `<table>
+      <tr><th>${t("col_setting")}</th><th>${t("col_current")}</th><th>${t("col_restore_to")}</th></tr>
+      ${d.differences.map(x=>`<tr><td>${esc(x.key)}</td><td>${esc(JSON.stringify(x.current))}</td><td><b>${esc(JSON.stringify(x.saved))}</b></td></tr>`).join("")}
+    </table>`;
+    msg.textContent = t("diff_count", d.differences.length) +
+      (d.skipped.length ? t("diff_skipped", d.skipped.length) : "");
+  } catch(e) { msg.textContent = t("compare_failed", e.message); msg.className = "msg err"; }
+}
+
+async function biosRestore() {
+  const backup = document.getElementById("bd-backup").value;
+  const msg = document.getElementById("bd-restore-msg");
+  if (!backup) { msg.textContent = t("no_backup_selected"); msg.className = "msg err"; return; }
+  if (!confirm(t("confirm_restore", backup))) return;
+  msg.textContent = t("restoring"); msg.className = "msg";
+  try {
+    const r = await fetch(`/api/devices/${biosDev}/bios/restore`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({backup_file: backup})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const d = await r.json();
+    msg.textContent = d.restored ? t("restore_ok", d.message, d.restored) : d.message;
+    refresh();
+  } catch(e) { msg.textContent = t("restore_failed", e.message); msg.className = "msg err"; }
+}
+
+function closeBiosDialog() {
+  if (biosPolling) { clearInterval(biosPolling); biosPolling = null; }
+  document.getElementById("biosDialog").close();
+}
+
+async function biosBackupOnly() {
+  const msg = document.getElementById("bd-msg");
+  msg.textContent = t("backing_up"); msg.className = "msg";
+  try {
+    const r = await fetch(`/api/devices/${biosDev}/bios/backup`, {method:"POST"});
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const d = await r.json();
+    msg.textContent = t("backup_ok", d.attribute_count, d.backup_file);
+    loadBackups(); refresh();
+  } catch(e) { msg.textContent = t("backup_failed", e.message); msg.className = "msg err"; refresh(); }
+}
+
+async function startBiosUpdate() {
+  const fileInput = document.getElementById("bd-file");
+  const msg = document.getElementById("bd-msg");
+  if (!fileInput.files.length) { msg.textContent = t("select_image_first"); msg.className = "msg err"; return; }
+  const dev = (window._devices ?? []).find(d => d.id === biosDev);
+  const power = dev?.snapshot?.data?.systems?.[0]?.power_state;
+  if (power !== "Off") {
+    msg.textContent = t("power_not_off", power ?? t("power_unknown"));
+    msg.className = "msg err";
+    document.getElementById("bd-power-warn").style.display = "";
+    return;
+  }
+  const f = fileInput.files[0];
+  if (!confirm(t("confirm_flash", f.name))) return;
+
+  document.getElementById("bd-start").disabled = true;
+  msg.textContent = t("uploading"); msg.className = "msg";
+  const form = new FormData();
+  form.append("file", f);
+  form.append("preserve", document.getElementById("bd-preserve").checked);
+  try {
+    const r = await fetch(`/api/devices/${biosDev}/bios/update`, {method:"POST", body:form});
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const d = await r.json();
+    msg.textContent = t("upload_done", d.size_mb, d.backup_file ? t("settings_backed_up") : "", d.task_id);
+    document.getElementById("bd-bar-outer").style.display = "";
+    loadBackups(); refresh();
+    pollBiosTask(d.task_id);
+  } catch(e) {
+    msg.textContent = t("update_failed", e.message); msg.className = "msg err";
+    document.getElementById("bd-start").disabled = false;
+  }
+}
+
+function pollBiosTask(taskId) {
+  const msg = document.getElementById("bd-msg");
+  const bar = document.getElementById("bd-bar");
+  biosPolling = setInterval(async () => {
+    try {
+      const d = await (await fetch(`/api/devices/${biosDev}/bios/task/${taskId}`)).json();
+      const pct = parseInt(d.flash_percentage) || d.percent_complete || 0;
+      bar.style.width = pct + "%";
+      if (d.state === "Completed") {
+        clearInterval(biosPolling); biosPolling = null;
+        bar.style.width = "100%";
+        msg.textContent = t("flash_complete");
+        document.getElementById("bd-start").disabled = false;
+        refresh();
+      } else if (d.state === "Exception" || d.status === "Critical") {
+        clearInterval(biosPolling); biosPolling = null;
+        msg.textContent = t("flash_failed", d.state); msg.className = "msg err";
+        document.getElementById("bd-start").disabled = false;
+        refresh();
+      } else if (d.state) {
+        msg.textContent = t("flashing", d.state + (pct ? " " + pct + "%" : ""));
+      } else {
+        msg.textContent = t("bmc_reconnecting");
+      }
+    } catch(e) { /* transient network error during flash; keep polling */ }
+  }, 3000);
+}
+
+// ---------------- activity log ----------------
+const kindLabel = k => t("kind_" + k) || k;
+const statusBadge = s => `<span class="badge ${s==="success"?"ok":(s==="running"?"warn":"crit")}">${t("st_" + s)}</span>`;
+// New rows carry msg_code + msg_params (i18n); legacy rows only have message text
+const activityMessage = a => a.msg_code ? t(a.msg_code, ...(a.msg_params ?? [])) : (a.message ?? "");
+
+function renderActivities(acts) {
+  const card = document.getElementById("activityCard");
+  if (!acts.length) { card.style.display = "none"; return; }
+  card.style.display = "";
+  document.getElementById("activityTable").innerHTML =
+    `<tr><th>${t("col_time")}</th><th>${t("col_device")}</th><th>${t("col_action")}</th><th>${t("col_status")}</th><th>${t("col_message")}</th></tr>` +
+    acts.map(a => `<tr>
+      <td style="white-space:nowrap">${new Date(a.updated*1000).toLocaleString()}</td>
+      <td>${esc(a.device_name)}</td>
+      <td>${esc(kindLabel(a.kind))}</td>
+      <td>${statusBadge(a.status)}</td>
+      <td>${esc(activityMessage(a))}</td>
+    </tr>`).join("");
+}
+
+// ---------------- Event log dialog ----------------
+let logDev = null;
+
+async function openLogDialog(devId) {
+  logDev = devId;
+  const dev = (window._devices ?? []).find(d => d.id === devId);
+  document.getElementById("ld-host").textContent = dev ? `${dev.name}(${dev.host})` : `#${devId}`;
+  document.getElementById("ld-msg").textContent = "";
+  document.getElementById("ld-table").innerHTML = "";
+  document.getElementById("logDialog").showModal();
+  const sel = document.getElementById("ld-service");
+  const services = (dev?.profile?.log_services ?? []);
+  sel.innerHTML = services.length
+    ? services.map(s => `<option value="${esc(s.path)}">${esc(s.name)}(${esc(s.owner)})</option>`).join("")
+    : `<option value="">${t("no_log_services")}</option>`;
+  const selIdx = services.findIndex(s => /SEL/i.test(s.id ?? "") || /SEL/i.test(s.name ?? ""));
+  if (selIdx >= 0) sel.selectedIndex = selIdx;
+  if (services.length) loadLogEntries();
+}
+
+function closeLogDialog() { document.getElementById("logDialog").close(); }
+
+const SEV_BADGE = s => `<span class="badge ${s==="OK"?"ok":(s==="Warning"?"warn":(s?"crit":"off"))}">${esc(s)}</span>`;
+
+async function loadLogEntries() {
+  const service = document.getElementById("ld-service").value;
+  const msg = document.getElementById("ld-msg");
+  const table = document.getElementById("ld-table");
+  if (!service) return;
+  msg.textContent = t("loading"); msg.className = "msg";
+  try {
+    const r = await fetch(`/api/devices/${logDev}/logs/entries?service=${encodeURIComponent(service)}&limit=100`);
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const d = await r.json();
+    msg.textContent = t("log_summary", d.total, d.entries.length);
+    table.innerHTML = `<tr><th>#</th><th>${t("col_time")}</th><th>${t("col_severity")}</th><th>${t("col_sensor_type")}</th><th>${t("col_event")}</th></tr>` +
+      d.entries.map(e => `<tr title="${esc(e.message)}">
+        <td>${esc(e.id)}</td>
+        <td style="white-space:nowrap">${e.created ? new Date(e.created).toLocaleString() : "–"}</td>
+        <td>${SEV_BADGE(e.severity)}</td>
+        <td>${esc(e.sensor_type)}</td>
+        <td>${esc(e.event ?? e.message.slice(0,80))}${e.entry_code && e.entry_code !== "Assert" ? `(${esc(e.entry_code)})` : ""}</td>
+      </tr>`).join("");
+  } catch(e) { msg.textContent = t("load_failed", e.message); msg.className = "msg err"; }
+}
+
+async function clearLog() {
+  const service = document.getElementById("ld-service").value;
+  const name = document.getElementById("ld-service").selectedOptions[0]?.textContent;
+  const msg = document.getElementById("ld-msg");
+  if (!service) return;
+  if (!confirm(t("confirm_clear", name))) return;
+  msg.textContent = t("clearing"); msg.className = "msg";
+  try {
+    const r = await fetch(`/api/devices/${logDev}/logs/clear`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({service})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    msg.textContent = t("cleared");
+    refresh(); loadLogEntries();
+  } catch(e) { msg.textContent = t("clear_failed", e.message); msg.className = "msg err"; }
+}
+
+// ---------------- main refresh ----------------
+async function refresh() {
+  try {
+    const [devices, activities] = await Promise.all([
+      (await fetch("/api/devices")).json(),
+      (await fetch("/api/activities")).json(),
+    ]);
+    window._devices = devices;
+    document.getElementById("app").innerHTML =
+      devices.length ? devices.map(renderDevice).join("") : `<div class="card muted">${t("no_devices")}</div>`;
+    renderActivities(activities);
+    document.getElementById("lastUpdate").textContent = t("updated_at", new Date().toLocaleTimeString());
+  } catch(e) {
+    document.getElementById("app").innerHTML = `<div class="card err">${t("backend_unreachable", e.message)}</div>`;
+  }
+}
+
+applyStatic();
+document.getElementById("app").innerHTML = `<div class="card muted">${t("loading")}</div>`;
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

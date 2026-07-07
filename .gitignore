@@ -1,0 +1,23 @@
+# --- secrets & local data (NEVER commit) ---
+*.env
+.env
+*.db
+redfish_manager.env
+redfish_manager.db
+bios_backups/
+
+# --- firmware images (large binaries / proprietary) ---
+*.rom
+*.hpm
+*.ima
+*.bin
+
+# --- probe / discovery dumps ---
+probe_*.json
+device_inventory_*.json
+
+# --- build / packaging artifacts ---
+*.zip
+__pycache__/
+venv/
+.vscode/
