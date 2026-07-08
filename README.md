@@ -98,6 +98,22 @@ python bios_update.py <BMC_IP> <USER> <PASSWORD> <image.bin> --preserve
 python bios_restore.py <BMC_IP> <USER> <PASSWORD> [backup.json]
 ```
 
+### ipmitool CLI(內部用,支援所有 ipmitool 指令)
+
+透過 LAN 對 BMC 執行任意 ipmitool 指令;帳密預設讀 `redfish_manager.env`,
+可用 `-H/-U/-P` 覆寫。**需先安裝 ipmitool 二進位**(Linux:`apt/yum install ipmitool`)。
+
+```bash
+python ipmi_cli.py sel list
+python ipmi_cli.py chassis status
+python ipmi_cli.py -H 192.168.0.47 -U root -P secret mc info
+python ipmi_cli.py -I lan raw 0x32 0xaa 0x00      # 預設 interface 為 lanplus
+```
+
+> 密碼透過環境變數 `IPMI_PASSWORD`(ipmitool `-E`)傳入,不會出現在行程清單;
+> 指令以陣列執行(非 shell),不受命令注入影響。核心邏輯在 `app/ipmi.py`,
+> 未來要接進網頁只需加一個帶認證+白名單的 endpoint,核心不需改動。
+
 ## 專案結構
 
 ```
@@ -105,10 +121,12 @@ redfish_manager/
 ├── app/
 │   ├── main.py            # FastAPI 入口 + API + 背景輪詢
 │   ├── redfish_client.py  # Redfish client(discovery / snapshot / BIOS 操作)
+│   ├── ipmi.py            # ipmitool 包裝核心(CLI 與未來 web 共用)
 │   └── db.py              # SQLite(設備、快照歷史、操作紀錄)
 ├── web/index.html         # 前端(單頁,無 build 步驟)
 ├── bios_update.py         # 獨立 BIOS 更新工具
 ├── bios_restore.py        # 獨立 BIOS 還原工具
+├── ipmi_cli.py            # 獨立 ipmitool CLI(需安裝 ipmitool)
 ├── bios_backups/          # BIOS 設定備份(自動建立)
 ├── redfish_manager.env    # BMC 連線設定(需自行建立,不進版控)
 └── redfish_manager.db     # SQLite 資料庫(自動建立)
