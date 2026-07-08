@@ -141,6 +141,15 @@ def find_running_update_by_task(conn, device_id: int, task_id: str) -> int | Non
     return r["id"] if r else None
 
 
+def fail_orphan_activities(conn):
+    """Mark activities left 'running' (from a previous process) as failed."""
+    conn.execute(
+        "UPDATE activities SET status='failed', updated=? WHERE status='running'",
+        (time.time(),),
+    )
+    conn.commit()
+
+
 def list_activities(conn, limit: int = 30) -> list[dict]:
     rows = conn.execute(
         """SELECT a.*, d.name AS device_name, d.host AS device_host

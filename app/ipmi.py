@@ -15,9 +15,18 @@ password out of the process list.
 import os
 import shutil
 import subprocess
+import sys
+import threading
+from pathlib import Path
+
+_CLI_PATH = Path(__file__).resolve().parent.parent / "ipmi_cli.py"
 
 DEFAULT_INTERFACE = "lanplus"   # IPMI 2.0; use "lan" for legacy 1.5
 DEFAULT_TIMEOUT = 30
+
+# pyghmi's session layer is not thread-safe and keeps global per-BMC session
+# state; concurrent calls from the threadpool can deadlock. Serialize them.
+_pyghmi_lock = threading.Lock()
 
 
 class IpmitoolNotFound(RuntimeError):
@@ -177,13 +186,16 @@ def _run_pyghmi(host, user, password, args, *, timeout) -> dict:
         raise PyghmiNotAvailable("pyghmi not installed; run `pip install pyghmi`")
     from pyghmi.ipmi import command
     printable = "pyghmi: " + " ".join(args)
-    try:
-        c = command.Command(bmc=host, userid=user, password=password)
-        out = _pyghmi_dispatch(c, args)
-    except SubcommandNotSupported as e:
-        return _result(False, 1, "", str(e), printable)
-    except Exception as e:
-        return _result(False, 1, "", f"{type(e).__name__}: {e}", printable)
+    # serialize: pyghmi's session layer is not thread-safe. pyghmi caches and
+    # reuses per-BMC sessions internally, so we deliberately do NOT log out.
+    with _pyghmi_lock:
+        try:
+            c = command.Command(bmc=host, userid=user, password=password)
+            out = _pyghmi_dispatch(c, args)
+        except SubcommandNotSupported as e:
+            return _result(False, 1, "", str(e), printable)
+        except Exception as e:
+            return _result(False, 1, "", f"{type(e).__name__}: {e}", printable)
     return _result(True, 0, out + ("\n" if out and not out.endswith("\n") else ""), "", printable)
 
 
@@ -212,3 +224,28 @@ def run_ipmi(host: str, user: str, password: str, args,
         return _run_pyghmi(host, user, password, args, timeout=timeout)
     raise IpmitoolNotFound(
         "no IPMI backend available: install ipmitool or `pip install pyghmi`")
+
+
+def run_ipmi_isolated(host: str, user: str, password: str, args,
+                      *, interface: str = DEFAULT_INTERFACE, timeout: int = DEFAULT_TIMEOUT,
+                      backend: str = "auto") -> dict:
+    """Run one IPMI command in a fresh subprocess (via ipmi_cli.py).
+
+    Preferred for long-lived servers: each command gets its own process, so the
+    IPMI session is cleanly released on exit. This avoids pyghmi's in-process
+    session reuse exhausting the BMC's session slots. Credentials are passed to
+    the child via environment variables, never on its command line.
+    """
+    cmd = [sys.executable, str(_CLI_PATH), "--backend", backend,
+           "-I", interface, "--timeout", str(timeout), *args]
+    env = {**os.environ, "BMC_HOST": host, "BMC_USER": user, "BMC_PASS": password}
+    # resolve which backend the child will actually pick (parent shares this host)
+    effective = backend
+    if backend == "auto":
+        effective = "ipmitool" if ipmitool_available() else "pyghmi"
+    printable = f"{effective}: " + " ".join(args)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout + 10)
+    except subprocess.TimeoutExpired:
+        return _result(False, None, "", f"timed out after {timeout}s", printable)
+    return _result(proc.returncode == 0, proc.returncode, proc.stdout, proc.stderr, printable)

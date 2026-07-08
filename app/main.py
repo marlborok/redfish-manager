@@ -3,16 +3,19 @@ import asyncio
 import contextlib
 import json
 import os
+import shlex
 import time
 from pathlib import Path
 
 import urllib3
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import db
+from .ipmi import run_ipmi_isolated
 from .redfish_client import RedfishClient, build_bios_patch
 
 urllib3.disable_warnings()
@@ -62,6 +65,8 @@ async def lifespan(app: FastAPI):
     host, user, pw = os.getenv("BMC_HOST"), os.getenv("BMC_USER"), os.getenv("BMC_PASS")
     if host and user and pw:
         db.ensure_device(conn, host, host, user, pw)
+    # any activity still "running" at startup is orphaned (its process died)
+    db.fail_orphan_activities(conn)
     conn.close()
     task = asyncio.create_task(collector_loop())
     yield
@@ -217,6 +222,53 @@ async def api_log_clear(device_id: int, body: ClearLogBody):
         await client.close()
     _finish_activity(act, "success", "act_clearlog_success", svc["name"])
     return {"cleared": svc["name"]}
+
+
+# ---------------------------------------------------------------------------
+# IPMI console (raw ipmitool-style commands via app.ipmi backends)
+#
+# NOTE: this executes arbitrary IPMI commands and the web UI is currently
+# unauthenticated — deploy only on a trusted/isolated network until an auth
+# layer is added. Commands are tokenized with shlex (no shell) and every
+# execution is recorded in the activity log for audit.
+# ---------------------------------------------------------------------------
+
+
+class IpmiBody(BaseModel):
+    command: str
+    backend: str = "auto"
+    timeout: int = 30
+
+
+@app.post("/api/devices/{device_id}/ipmi")
+async def api_ipmi(device_id: int, body: IpmiBody):
+    dev = _get_device_or_404(device_id)
+    try:
+        args = shlex.split(body.command)
+    except ValueError as e:
+        raise HTTPException(400, f"無法解析指令:{e}")
+    if not args:
+        raise HTTPException(400, "指令為空")
+
+    timeout = min(max(body.timeout, 1), 60)
+    act = _log_activity(device_id, "ipmi", "act_ipmi_run", body.command)
+    try:
+        # hard cap so a hung backend can't leave the request (and activity) pending
+        res = await asyncio.wait_for(
+            run_in_threadpool(run_ipmi_isolated, dev["host"], dev["username"], dev["password"],
+                              args, backend=body.backend, timeout=timeout),
+            timeout=timeout + 15)
+    except asyncio.TimeoutError:
+        _finish_activity(act, "failed", "act_ipmi_failed", body.command, "timeout")
+        raise HTTPException(504, "IPMI 執行逾時")
+    except Exception as e:
+        _finish_activity(act, "failed", "act_ipmi_failed", body.command, str(e))
+        raise HTTPException(502, f"IPMI 執行失敗:{e}")
+
+    _finish_activity(act, "success" if res["ok"] else "failed",
+                     "act_ipmi_ok" if res["ok"] else "act_ipmi_failed",
+                     body.command, "" if res["ok"] else (res["stderr"] or "").strip()[:120])
+    return res
 
 
 # ---------------------------------------------------------------------------

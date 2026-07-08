@@ -164,6 +164,21 @@
   <div style="max-height:420px;overflow:auto;margin-top:8px"><table id="ld-table"></table></div>
 </dialog>
 
+<dialog id="ipmiDialog" style="width:760px">
+  <h3><span data-i18n="ipmi_console_title"></span> <span class="muted" id="ic-host" style="font-weight:400;font-size:13px"></span></h3>
+  <div class="err" id="ic-warn" style="font-size:12px;margin-bottom:8px" data-i18n="ipmi_unauth_warn"></div>
+  <div class="btn-row" id="ic-quick" style="margin-bottom:8px"></div>
+  <div class="field" style="display:flex;gap:8px;align-items:center">
+    <input id="ic-cmd" style="flex:1;padding:7px 10px;font-family:monospace" data-i18n-ph="ipmi_placeholder"
+           onkeydown="ipmiKey(event)">
+    <button class="btn btn-primary" onclick="runIpmi()" data-i18n="ipmi_run"></button>
+    <button class="btn btn-ghost" onclick="document.getElementById('ipmiDialog').close()" data-i18n="close"></button>
+  </div>
+  <div class="muted" id="ic-status" style="font-size:12px"></div>
+  <pre id="ic-out" style="background:var(--pre-bg);color:var(--text);padding:10px;border-radius:6px;
+    max-height:360px;overflow:auto;font-size:12px;white-space:pre-wrap;margin:8px 0 0;min-height:40px"></pre>
+</dialog>
+
 <script>
 // ==================== i18n ====================
 const I18N = {
@@ -177,7 +192,7 @@ const I18N = {
     failed: "失敗:{0}",
     activity_log: "操作紀錄",
     col_time: "時間", col_device: "設備", col_action: "操作", col_status: "狀態", col_message: "訊息",
-    kind_backup: "備份", kind_update: "BIOS 更新", kind_restore: "還原", kind_clearlog: "清除日誌",
+    kind_backup: "備份", kind_update: "BIOS 更新", kind_restore: "還原", kind_clearlog: "清除日誌", kind_ipmi: "IPMI 指令",
     st_running: "進行中", st_success: "成功", st_failed: "失敗",
     loading: "載入中…", no_devices: "尚未加入任何設備",
     no_data: "尚無資料,等待第一次輪詢與探測…",
@@ -185,7 +200,11 @@ const I18N = {
     health: "健康", power: "電源", serial: "序號", memory: "記憶體",
     power_control: "電源控制(此設備支援的操作)",
     management: "管理與檢視",
-    bios_update_btn: "BIOS 更新…", event_log_btn: "事件日誌…",
+    bios_update_btn: "BIOS 更新…", event_log_btn: "事件日誌…", ipmi_console_btn: "IPMI 主控台…",
+    ipmi_console_title: "IPMI 主控台", ipmi_run: "執行", ipmi_placeholder: "輸入 IPMI 指令,例如 sel list",
+    ipmi_unauth_warn: "⚠ 此主控台可執行任意 IPMI 指令且目前無登入認證,請僅在信任網段使用。",
+    ipmi_confirm_destructive: "這看起來是破壞性指令:\n{0}\n確定要執行嗎?",
+    ipmi_running: "執行中…", ipmi_exit: "backend={0} · exit={1}",
     temp_sensors: "溫度感測器({0})", col_sensor: "感測點", col_reading: "讀值",
     fans: "風扇", col_fan: "風扇", col_speed: "轉速",
     psus: "電源供應器", col_psu: "PSU", col_watts: "功率",
@@ -240,6 +259,7 @@ const I18N = {
     act_update_failed: "更新失敗:{0}",
     act_update_task_complete: "Task {0} 刷寫完成,主機重開機後生效",
     act_update_task_failed: "Task {0} 刷寫失敗(Exception)",
+    act_ipmi_run: "執行 IPMI:{0}", act_ipmi_ok: "IPMI 完成:{0}", act_ipmi_failed: "IPMI 失敗:{0} — {1}",
     // Reset types
     rt_On: "開機", rt_ForceOff: "強制斷電", rt_GracefulShutdown: "正常關機",
     rt_GracefulRestart: "正常重啟", rt_ForceRestart: "強制重啟", rt_PowerCycle: "電源循環",
@@ -256,7 +276,7 @@ const I18N = {
     failed: "Failed: {0}",
     activity_log: "Activity Log",
     col_time: "Time", col_device: "Device", col_action: "Action", col_status: "Status", col_message: "Message",
-    kind_backup: "Backup", kind_update: "BIOS Update", kind_restore: "Restore", kind_clearlog: "Clear Log",
+    kind_backup: "Backup", kind_update: "BIOS Update", kind_restore: "Restore", kind_clearlog: "Clear Log", kind_ipmi: "IPMI Command",
     st_running: "Running", st_success: "Success", st_failed: "Failed",
     loading: "Loading…", no_devices: "No devices added yet",
     no_data: "No data yet, waiting for first poll & discovery…",
@@ -264,7 +284,11 @@ const I18N = {
     health: "Health", power: "Power", serial: "Serial", memory: "Memory",
     power_control: "Power Control (actions supported by this device)",
     management: "Management & Inspection",
-    bios_update_btn: "BIOS Update…", event_log_btn: "Event Log…",
+    bios_update_btn: "BIOS Update…", event_log_btn: "Event Log…", ipmi_console_btn: "IPMI Console…",
+    ipmi_console_title: "IPMI Console", ipmi_run: "Run", ipmi_placeholder: "Enter an IPMI command, e.g. sel list",
+    ipmi_unauth_warn: "⚠ This console runs arbitrary IPMI commands and the UI is currently unauthenticated — use only on a trusted network.",
+    ipmi_confirm_destructive: "This looks like a destructive command:\n{0}\nRun it anyway?",
+    ipmi_running: "Running…", ipmi_exit: "backend={0} · exit={1}",
     temp_sensors: "Temperature Sensors ({0})", col_sensor: "Sensor", col_reading: "Reading",
     fans: "Fans", col_fan: "Fan", col_speed: "Speed",
     psus: "Power Supplies", col_psu: "PSU", col_watts: "Power",
@@ -316,6 +340,7 @@ const I18N = {
     act_update_failed: "Update failed: {0}",
     act_update_task_complete: "Task {0} flash complete, takes effect after host reboot",
     act_update_task_failed: "Task {0} flash failed (Exception)",
+    act_ipmi_run: "IPMI: {0}", act_ipmi_ok: "IPMI OK: {0}", act_ipmi_failed: "IPMI failed: {0} — {1}",
     rt_On: "Power On", rt_ForceOff: "Force Off", rt_GracefulShutdown: "Graceful Shutdown",
     rt_GracefulRestart: "Graceful Restart", rt_ForceRestart: "Force Restart", rt_PowerCycle: "Power Cycle",
     rt_Nmi: "NMI", rt_ForceOn: "Force On", rt_PushPowerButton: "Power Button",
@@ -417,6 +442,7 @@ function renderSystem(sys, profileSys, devId) {
         <div class="btn-row">
           <button class="btn btn-ghost" onclick="openBiosDialog(${devId},'${esc(sys.bios_version)}')">${t("bios_update_btn")}</button>
           <button class="btn btn-ghost" onclick="openLogDialog(${devId})">${t("event_log_btn")}</button>
+          <button class="btn btn-ghost" onclick="openIpmiDialog(${devId})">${t("ipmi_console_btn")}</button>
         </div>
       </div>
       <div class="msg"></div>
@@ -661,6 +687,70 @@ const kindLabel = k => t("kind_" + k) || k;
 const statusBadge = s => `<span class="badge ${s==="success"?"ok":(s==="running"?"warn":"crit")}">${t("st_" + s)}</span>`;
 // New rows carry msg_code + msg_params (i18n); legacy rows only have message text
 const activityMessage = a => a.msg_code ? t(a.msg_code, ...(a.msg_params ?? [])) : (a.message ?? "");
+
+// ---------------- IPMI console dialog ----------------
+let ipmiDev = null;
+const ipmiHistory = [];
+let ipmiHistIdx = -1;
+const IPMI_QUICK = ["power status", "mc info", "sel list", "sensor list", "fru"];
+// naive destructive-command detection → extra confirm
+const IPMI_DESTRUCTIVE = /\b(raw|power\s+(off|cycle|reset|soft)|chassis\s+power\s+(off|cycle|reset)|bmc\s+reset|mc\s+reset|bootdev)\b/i;
+
+function openIpmiDialog(devId) {
+  ipmiDev = devId;
+  ipmiHistIdx = -1;
+  const dev = (window._devices ?? []).find(d => d.id === devId);
+  document.getElementById("ic-host").textContent = dev ? `${dev.name}(${dev.host})` : `#${devId}`;
+  document.getElementById("ic-out").textContent = "";
+  document.getElementById("ic-status").textContent = "";
+  document.getElementById("ic-quick").innerHTML = IPMI_QUICK.map(c =>
+    `<button class="btn btn-ghost" onclick="runIpmi('${esc(c)}')">${esc(c)}</button>`).join("");
+  document.getElementById("ipmiDialog").showModal();
+  document.getElementById("ic-cmd").focus();
+}
+
+function ipmiKey(ev) {
+  if (ev.key === "Enter") { runIpmi(); return; }
+  if (ev.key === "ArrowUp" && ipmiHistory.length) {
+    ipmiHistIdx = ipmiHistIdx < 0 ? ipmiHistory.length - 1 : Math.max(0, ipmiHistIdx - 1);
+    ev.target.value = ipmiHistory[ipmiHistIdx]; ev.preventDefault();
+  } else if (ev.key === "ArrowDown" && ipmiHistIdx >= 0) {
+    ipmiHistIdx = ipmiHistIdx + 1 >= ipmiHistory.length ? -1 : ipmiHistIdx + 1;
+    ev.target.value = ipmiHistIdx < 0 ? "" : ipmiHistory[ipmiHistIdx];
+  }
+}
+
+async function runIpmi(preset) {
+  const input = document.getElementById("ic-cmd");
+  const cmd = (preset ?? input.value).trim();
+  if (!cmd) return;
+  if (IPMI_DESTRUCTIVE.test(cmd) && !confirm(t("ipmi_confirm_destructive", cmd))) return;
+  if (ipmiHistory[ipmiHistory.length - 1] !== cmd) ipmiHistory.push(cmd);
+  ipmiHistIdx = -1;
+  if (preset) input.value = cmd;
+
+  const out = document.getElementById("ic-out");
+  const status = document.getElementById("ic-status");
+  status.textContent = t("ipmi_running"); status.className = "muted";
+  out.textContent = "$ ipmitool " + cmd + "\n";
+  try {
+    const r = await fetch(`/api/devices/${ipmiDev}/ipmi`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({command: cmd})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail ?? r.status);
+    out.textContent += (d.stdout || "") + (d.stderr ? ("\n" + d.stderr) : "");
+    const backend = (d.command || "").startsWith("pyghmi") ? "pyghmi" : "ipmitool";
+    status.textContent = t("ipmi_exit", backend, d.exit_code ?? "?");
+    status.className = d.ok ? "muted" : "err";
+    refresh(true);  // reflect the logged activity
+  } catch(e) {
+    out.textContent += "[error] " + e.message;
+    status.textContent = "";
+  }
+  input.value = ""; input.focus();
+}
 
 function renderActivities(acts) {
   const card = document.getElementById("activityCard");
