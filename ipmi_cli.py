@@ -20,7 +20,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.ipmi import DEFAULT_INTERFACE, DEFAULT_TIMEOUT, IpmitoolNotFound, run_ipmi
+from app.ipmi import (DEFAULT_INTERFACE, DEFAULT_TIMEOUT, IpmitoolNotFound,
+                      PyghmiNotAvailable, run_ipmi)
 
 ENV_PATH = Path(__file__).resolve().parent / "redfish_manager.env"
 
@@ -37,6 +38,8 @@ def main():
     ap.add_argument("-U", "--user", default=os.getenv("BMC_USER"))
     ap.add_argument("-P", "--password", default=os.getenv("BMC_PASS"))
     ap.add_argument("-I", "--interface", default=DEFAULT_INTERFACE)
+    ap.add_argument("--backend", choices=("auto", "ipmitool", "pyghmi"), default="auto",
+                    help="auto (default): ipmitool binary if present, else pure-Python pyghmi")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     ap.add_argument("command", nargs=argparse.REMAINDER,
                     help="ipmitool subcommand and arguments (e.g. sel list)")
@@ -49,8 +52,8 @@ def main():
 
     try:
         res = run_ipmi(args.host, args.user, args.password, args.command,
-                       interface=args.interface, timeout=args.timeout)
-    except IpmitoolNotFound as e:
+                       interface=args.interface, timeout=args.timeout, backend=args.backend)
+    except (IpmitoolNotFound, PyghmiNotAvailable) as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         sys.exit(127)
 

@@ -3,3 +3,4 @@ uvicorn[standard]
 httpx
 python-dotenv
 python-multipart
+pyghmi          # pure-Python IPMI backend (no ipmitool binary required)

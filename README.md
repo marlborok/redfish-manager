@@ -98,21 +98,36 @@ python bios_update.py <BMC_IP> <USER> <PASSWORD> <image.bin> --preserve
 python bios_restore.py <BMC_IP> <USER> <PASSWORD> [backup.json]
 ```
 
-### ipmitool CLI(內部用,支援所有 ipmitool 指令)
+### IPMI CLI(內部用,ipmitool-style 指令)
 
-透過 LAN 對 BMC 執行任意 ipmitool 指令;帳密預設讀 `redfish_manager.env`,
-可用 `-H/-U/-P` 覆寫。**需先安裝 ipmitool 二進位**(Linux:`apt/yum install ipmitool`)。
+透過 LAN 對 BMC 執行 IPMI 指令;帳密預設讀 `redfish_manager.env`,可用 `-H/-U/-P` 覆寫。
 
 ```bash
+python ipmi_cli.py power status
 python ipmi_cli.py sel list
-python ipmi_cli.py chassis status
-python ipmi_cli.py -H 192.168.0.47 -U root -P secret mc info
-python ipmi_cli.py -I lan raw 0x32 0xaa 0x00      # 預設 interface 為 lanplus
+python ipmi_cli.py mc info
+python ipmi_cli.py -H 192.168.0.47 -U root -P secret fru
+python ipmi_cli.py raw 0x32 0xaa 0x00
 ```
 
-> 密碼透過環境變數 `IPMI_PASSWORD`(ipmitool `-E`)傳入,不會出現在行程清單;
-> 指令以陣列執行(非 shell),不受命令注入影響。核心邏輯在 `app/ipmi.py`,
-> 未來要接進網頁只需加一個帶認證+白名單的 endpoint,核心不需改動。
+**兩種後端**(`--backend auto|ipmitool|pyghmi`,預設 `auto`):
+
+- **ipmitool**:呼叫 ipmitool 二進位,最忠實(完整 CLI、輸出一致),需先安裝
+  (Linux:`apt/yum install ipmitool`)
+- **pyghmi**:純 Python IPMI(`pip install pyghmi`,已列入 requirements),**免裝二進位、
+  跨平台(Windows 可用)**。支援 power / chassis / mc info / sel / sdr / sensor / fru /
+  bootdev / raw 等常用指令;ipmitool 的廠商專屬子命令未必有,但 `raw` 可涵蓋底層操作
+
+`auto` 會在有 ipmitool 時優先用它,否則自動 fallback 到 pyghmi。指定後端範例:
+
+```bash
+python ipmi_cli.py --backend pyghmi sensor list     # 強制純 Python
+python ipmi_cli.py --backend ipmitool lan print     # 強制用二進位(廠商指令)
+```
+
+> 密碼:ipmitool 走環境變數 `IPMI_PASSWORD`(`-E`)不進行程清單;指令以陣列執行(非 shell),
+> 不受命令注入影響。核心邏輯在 `app/ipmi.py`(兩後端共用同一介面),未來要接進網頁只需加一個
+> 帶認證+白名單的 endpoint,核心不需改動。
 
 ## 專案結構
 
