@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 httpx
+urllib3           # used to silence self-signed TLS warnings (not pulled in by httpx)
 python-dotenv
 python-multipart
 pyghmi          # pure-Python IPMI backend (no ipmitool binary required)
